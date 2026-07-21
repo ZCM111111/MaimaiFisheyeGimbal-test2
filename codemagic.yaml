@@ -1,6 +1,6 @@
 workflows:
   ios-debug:
-    name: Debug Build + IPA
+    name: Debug Build + Unsigned IPA
     instance_type: mac_mini_m1
     max_build_duration: 30
     environment:
@@ -9,6 +9,7 @@ workflows:
       events:
         - push
       branch_patterns:
+        - pattern: master
         - pattern: main
       cancel_previous_builds: true
     scripts:
@@ -16,7 +17,7 @@ workflows:
         script: brew install xcodegen
       - name: Generate Xcode project
         script: xcodegen generate
-      - name: Build for device
+      - name: Build for device (no code signing)
         script: |
           xcodebuild build \
             -project MaimaiFisheyeStabilizer.xcodeproj \
@@ -25,10 +26,16 @@ workflows:
             -configuration Debug \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER=""
       - name: Package unsigned IPA
         script: |
           APP_PATH=$(find $HOME/Library/Developer/Xcode/DerivedData -name "MaimaiFisheyeStabilizer.app" -path "*/Debug-iphoneos/*" 2>/dev/null | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: Could not find built .app"
+            exit 1
+          fi
           echo "Found app: $APP_PATH"
           mkdir -p $CM_BUILD_DIR/build/Payload
           cp -R "$APP_PATH" $CM_BUILD_DIR/build/Payload/
