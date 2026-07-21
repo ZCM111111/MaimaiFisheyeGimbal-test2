@@ -8,10 +8,12 @@ class MotionManager: ObservableObject {
     @Published var yaw: Double = 0.0
 
     // MARK: - Configuration
-    var smoothingAlpha: Double = 0.15
+    /// Exponential moving average smoothing factor (0.0 = no smoothing, 1.0 = instant).
+    /// All angles are in radians.
+    let smoothingAlpha: Double = 0.15
 
     // MARK: - Private State
-    private let motionManager = CMMotionManager()
+    private let coreMotionManager = CMMotionManager()
 
     // Raw angles (for unwrapping)
     private var previousRawRoll: Double = 0.0
@@ -39,24 +41,31 @@ class MotionManager: ObservableObject {
     // MARK: - Public Methods
 
     func start() {
-        guard motionManager.isDeviceMotionAvailable else {
-            print("Device motion is not available on this device.")
+        guard coreMotionManager.isDeviceMotionAvailable else {
+            os_log("Device motion is not available on this device.", type: .error)
             return
         }
 
-        motionManager.deviceMotionUpdateInterval = 1.0 / 120.0 // 120 Hz
+        coreMotionManager.deviceMotionUpdateInterval = 1.0 / 120.0 // 120 Hz
 
-        motionManager.startDeviceMotionUpdates(
+        let motionQueue = DispatchQueue(label: "com.maimai.motion", qos: .userInteractive)
+        coreMotionManager.startDeviceMotionUpdates(
             using: .xMagneticNorthZVertical,
-            to: .main
+            to: motionQueue
         ) { [weak self] motion, error in
-            guard let self = self, let motion = motion else { return }
+            guard let self = self else { return }
+            if let error = error {
+                os_log("Motion update error: %{public}@", type: .error, error.localizedDescription)
+                return
+            }
+            guard let motion = motion else { return }
             self.handleMotion(motion)
         }
     }
 
     func stop() {
-        motionManager.stopDeviceMotionUpdates()
+        coreMotionManager.stopDeviceMotionUpdates()
+        hasFirstReading = false
     }
 
     func resetCenter() {
