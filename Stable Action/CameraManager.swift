@@ -74,8 +74,8 @@ final class CameraManager: NSObject, ObservableObject {
     @Published var actionModeEnabled = false {
         didSet {
             actionModeFlag = actionModeEnabled
-            // Always use wide angle for stabilization
-            cameraType = .wide
+            // Always use ultra-wide angle (0.5x) for maximum stabilization margin
+            cameraType = .ultraWide
             sessionQueue.async { self.applyStabilization() }
         }
     }
