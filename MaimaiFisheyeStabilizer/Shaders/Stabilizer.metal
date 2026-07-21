@@ -11,6 +11,18 @@ struct VertexOut {
     float2 texCoord;
 };
 
+struct StabilizationUniforms {
+    float roll;
+    float pitch;
+    float yaw;
+    float strength;
+    float outputFov;
+    float focalLength;
+    float2 principalPoint;
+    float k1;
+    float k2;
+};
+
 vertex VertexOut vertexShader(VertexIn in [[stage_in]]) {
     VertexOut out;
     out.position = in.position;
@@ -20,6 +32,8 @@ vertex VertexOut vertexShader(VertexIn in [[stage_in]]) {
 
 fragment float4 fragmentFunction(VertexOut in [[stage_in]],
                                   texture2d<float> cameraTexture [[texture(0)]],
-                                  sampler textureSampler [[sampler(0)]]) {
+                                  sampler textureSampler [[sampler(0)]],
+                                  constant StabilizationUniforms &uniforms [[buffer(0)]]) {
+    // Passthrough for now — stabilization logic added in Task 7
     return cameraTexture.sample(textureSampler, in.texCoord);
 }
