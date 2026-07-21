@@ -9,10 +9,6 @@ struct StabilizerUniforms {
     var yaw: Float
     var strength: Float
     var outputFov: Float
-    var focalLength: Float
-    var principalPoint: SIMD2<Float>
-    var k1: Float
-    var k2: Float
     var viewportSize: SIMD2<Float>
     var sourceTextureSize: SIMD2<Float>
 }
@@ -46,10 +42,6 @@ class MetalPipeline: ObservableObject {
             yaw: 0.0,
             strength: 1.0,
             outputFov: 100.0,
-            focalLength: 500.0,
-            principalPoint: SIMD2<Float>(960.0, 540.0),
-            k1: 0.0,
-            k2: 0.0,
             viewportSize: SIMD2<Float>(1920.0, 1080.0),
             sourceTextureSize: SIMD2<Float>(1920.0, 1080.0)
         )
@@ -67,17 +59,13 @@ class MetalPipeline: ObservableObject {
         }
     }
 
-    /// Update uniforms with motion data and lens parameters
+    /// Update uniforms with motion data
     func updateUniforms(
         roll: Float,
         pitch: Float,
         yaw: Float,
         strength: Float,
         outputFov: Float,
-        focalLength: Float,
-        principalPoint: SIMD2<Float>,
-        k1: Float,
-        k2: Float,
         viewportSize: SIMD2<Float>,
         sourceTextureSize: SIMD2<Float>
     ) {
@@ -86,10 +74,6 @@ class MetalPipeline: ObservableObject {
         currentUniforms.yaw = yaw
         currentUniforms.strength = strength
         currentUniforms.outputFov = outputFov
-        currentUniforms.focalLength = focalLength
-        currentUniforms.principalPoint = principalPoint
-        currentUniforms.k1 = k1
-        currentUniforms.k2 = k2
         currentUniforms.viewportSize = viewportSize
         currentUniforms.sourceTextureSize = sourceTextureSize
 

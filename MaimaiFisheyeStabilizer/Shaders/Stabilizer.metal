@@ -3,17 +3,13 @@ using namespace metal;
 
 // MARK: - Uniforms
 struct StabilizerUniforms {
-    float roll;
-    float pitch;
-    float yaw;
-    float strength;
-    float outputFov;
-    float focalLength;
-    float2 principalPoint;
-    float k1;
-    float k2;
-    float2 viewportSize;
-    float2 sourceTextureSize;
+    float roll;           // radians, counter-rotate by this angle
+    float pitch;          // radians, vertical shift factor
+    float yaw;            // radians, horizontal shift factor
+    float strength;       // 0..1, how much stabilization to apply
+    float outputFov;      // degrees, horizontal FOV of output crop
+    float2 viewportSize;  // output pixel dimensions
+    float2 sourceTextureSize; // input pixel dimensions
 };
 
 // MARK: - Vertex I/O
@@ -23,26 +19,19 @@ struct VertexOut {
 };
 
 // MARK: - Vertex Shader
-// Full-screen quad: 6 vertices (2 triangles)
 vertex VertexOut vertexShader(uint vertexID [[vertex_id]]) {
-    // Triangle strip for a full-screen quad:
-    // 0: (-1, -1)  1: ( 1, -1)
-    // 2: (-1,  1)  3: ( 1,  1)
-    // Using triangle strip: 0,1,2,3
     float4 positions[4] = {
-        float4(-1.0, -1.0, 0.0, 1.0),  // bottom-left
-        float4( 1.0, -1.0, 0.0, 1.0),  // bottom-right
-        float4(-1.0,  1.0, 0.0, 1.0),  // top-left
-        float4( 1.0,  1.0, 0.0, 1.0)   // top-right
+        float4(-1.0, -1.0, 0.0, 1.0),
+        float4( 1.0, -1.0, 0.0, 1.0),
+        float4(-1.0,  1.0, 0.0, 1.0),
+        float4( 1.0,  1.0, 0.0, 1.0)
     };
-
     float2 texCoords[4] = {
-        float2(0.0, 1.0),  // bottom-left
-        float2(1.0, 1.0),  // bottom-right
-        float2(0.0, 0.0),  // top-left
-        float2(1.0, 0.0)   // top-right
+        float2(0.0, 1.0),
+        float2(1.0, 1.0),
+        float2(0.0, 0.0),
+        float2(1.0, 0.0)
     };
-
     VertexOut out;
     out.position = positions[vertexID];
     out.texCoord = texCoords[vertexID];
@@ -50,92 +39,88 @@ vertex VertexOut vertexShader(uint vertexID [[vertex_id]]) {
 }
 
 // MARK: - Fragment Shader
+// Stable-Action style 2D crop + rotation from fisheye source
 fragment float4 fragmentShader(
     VertexOut in [[stage_in]],
     texture2d<float> cameraTexture [[texture(0)]],
-    constant StabilizerUniforms &uniforms [[buffer(0)]])
+    constant StabilizerUniforms &u [[buffer(0)]])
 {
     constexpr sampler textureSampler(mag_filter::linear, min_filter::linear, address::clamp_to_edge);
 
-    // Step 1: Convert output pixel to NDC (-1 to 1)
-    float2 ndc = in.texCoord * 2.0 - 1.0;  // Map from [0,1] to [-1,1]
-    // Note: in.texCoord is (0,0) top-left in Metal texture coords
-    // But NDC y is -1 at bottom, +1 at top, so we flip y
-    ndc.y = -ndc.y;
+    // Output pixel position in UV [0,1]
+    float2 outUV = in.texCoord;
+    float2 outSize = u.viewportSize;
+    float2 srcSize = u.sourceTextureSize;
 
-    // Step 2: Generate rectilinear ray based on outputFov and aspect ratio
-    float aspectRatio = uniforms.viewportSize.x / uniforms.viewportSize.y;
+    // --- Step 1: Compute output crop rectangle in source pixels ---
+    // Aspect ratio of output
+    float outAspect = outSize.x / outSize.y;
+    // Aspect ratio of source
+    float srcAspect = srcSize.x / srcSize.y;
 
-    // Half FOV in radians
-    float halfFovRad = radians(uniforms.outputFov * 0.5);
+    // Output FOV in radians
+    float halfFovRad = radians(u.outputFov * 0.5);
     float tanHalfFov = tan(halfFovRad);
 
-    // Generate ray in camera space (looking down -Z in Metal)
-    float3 ray;
-    ray.x = ndc.x * tanHalfFov * aspectRatio;
-    ray.y = ndc.y * tanHalfFov;
-    ray.z = -1.0;
+    // Crop size in source pixels: the output covers a certain angular width
+    // For a fisheye lens, angular coverage is roughly proportional to pixel distance from center
+    // We'll use a simple approximation: crop width = focal_length * angular_width
+    // where focal_length is estimated from source dimensions
+    float focalLength = srcSize.x / (2.0 * tan(halfFovRad * 2.0)); // rough estimate for wide angle
 
-    // Normalize the ray
-    ray = normalize(ray);
+    // Actually, simpler: just define crop as a fraction of source
+    // For 238° fisheye, a 100° output FOV is about 42% of the angular range
+    float cropFraction = u.outputFov / 238.0;
 
-    // Step 3: Apply inverse 3D rotation (counter-rotate by phone orientation * strength)
-    float roll = uniforms.roll * uniforms.strength;
-    float pitch = uniforms.pitch * uniforms.strength;
-    float yaw = uniforms.yaw * uniforms.strength;
+    float cropW = srcSize.x * cropFraction;
+    float cropH = cropW / outAspect;
 
-    // Rotation matrices (column-major convention for Metal)
-    // Rx(roll)
-    float3x3 Rx = float3x3(
-        1.0,  0.0,       0.0,
-        0.0,  cos(roll), -sin(roll),
-        0.0,  sin(roll),  cos(roll)
-    );
+    // Clamp to available source
+    cropW = min(cropW, srcSize.x * 0.95);
+    cropH = min(cropH, srcSize.y * 0.95);
 
-    // Ry(pitch)
-    float3x3 Ry = float3x3(
-        cos(pitch),  0.0, sin(pitch),
-        0.0,         1.0, 0.0,
-        -sin(pitch), 0.0, cos(pitch)
-    );
+    // Margins: how much we can shift before hitting edges
+    float marginX = (srcSize.x - cropW) * 0.5;
+    float marginY = (srcSize.y - cropH) * 0.5;
 
-    // Rz(yaw)
-    float3x3 Rz = float3x3(
-        cos(yaw), -sin(yaw), 0.0,
-        sin(yaw),  cos(yaw), 0.0,
-        0.0,       0.0,      1.0
-    );
+    // --- Step 2: Apply stabilization offsets (Stable-Action style) ---
+    float s = u.strength;
 
-    // Inverse rotation = Rz(-yaw) * Ry(-pitch) * Rx(-roll)
-    // Since R(-theta) = transpose(R(theta)) for orthogonal matrices,
-    // we negate the angles to get the inverse rotation
-    float3x3 R = transpose(Rz) * transpose(Ry) * transpose(Rx);
-    float3 rotatedRay = R * ray;
+    // Roll: rotate the crop window around center
+    float angle = -u.roll * s;  // counter-rotate
 
-    // Step 4: Project rotated ray to fisheye image plane using equidistant projection: r = f * theta
-    // theta = angle from optical axis (z-axis)
-    float theta = acos(clamp(rotatedRay.z / length(rotatedRay), -1.0, 1.0));
-    float phi = atan2(rotatedRay.y, rotatedRay.x);
+    // Pitch: vertical shift (phone tilts forward → scene moves up → crop moves up)
+    // Stable-Action uses normalized offset [-1,1] multiplied by margin
+    // We convert pitch angle to normalized offset
+    float maxPitchRange = 3.14159265 / 6.0; // 30°
+    float pitchNorm = clamp(u.pitch / maxPitchRange, -1.0, 1.0) * s;
+    float pitchShiftY = pitchNorm * marginY;
 
-    // Equidistant projection: r = f * theta
-    float r = uniforms.focalLength * theta;
+    // Yaw: horizontal shift (similar to pitch)
+    float maxYawRange = 3.14159265 / 6.0; // 30°
+    float yawNorm = clamp(u.yaw / maxYawRange, -1.0, 1.0) * s;
+    float yawShiftX = yawNorm * marginX;
 
-    // Step 5: Apply radial distortion correction (k1, k2)
-    // r_corrected = r * (1 + k1 * r^2 + k2 * r^4)
-    float r2 = r * r;
-    float r4 = r2 * r2;
-    float r_corrected = r * (1.0 + uniforms.k1 * r2 + uniforms.k2 * r4);
+    // --- Step 3: Map output pixel to source pixel ---
+    // Output UV [-0.5, 0.5] relative to center
+    float2 outCentered = outUV - 0.5;
 
-    // Step 6: Map to fisheye UV coordinates
-    float2 fisheyePixel;
-    fisheyePixel.x = uniforms.principalPoint.x + r_corrected * cos(phi);
-    fisheyePixel.y = uniforms.principalPoint.y + r_corrected * sin(phi);
+    // Rotate by roll angle
+    float cosA = cos(angle);
+    float sinA = sin(angle);
+    float2 rotated;
+    rotated.x = outCentered.x * cosA - outCentered.y * sinA;
+    rotated.y = outCentered.x * sinA + outCentered.y * cosA;
 
-    // Convert pixel coordinates to UV
-    float2 fisheyeUV = fisheyePixel / uniforms.sourceTextureSize;
+    // Scale to crop size and apply shifts
+    float2 srcPixel;
+    srcPixel.x = srcSize.x * 0.5 + rotated.x * cropW + yawShiftX;
+    srcPixel.y = srcSize.y * 0.5 - rotated.y * cropH + pitchShiftY; // flip Y
 
-    // Step 7: Clamp to edge to avoid black borders (handled by sampler)
-    // Step 8: Sample source texture
-    float4 color = cameraTexture.sample(textureSampler, fisheyeUV);
+    // Convert to UV
+    float2 srcUV = srcPixel / srcSize;
+
+    // Sample
+    float4 color = cameraTexture.sample(textureSampler, srcUV);
     return color;
 }

@@ -76,10 +76,6 @@ struct CameraPreviewView: UIViewRepresentable {
                 yaw: Float(yaw),
                 strength: stabilization.strength,
                 outputFov: stabilization.outputFov,
-                focalLength: lensProfile.focalLength,
-                principalPoint: SIMD2<Float>(lensProfile.principalPointX, lensProfile.principalPointY),
-                k1: lensProfile.k1,
-                k2: lensProfile.k2,
                 viewportSize: SIMD2<Float>(Float(viewSize.width), Float(viewSize.height)),
                 sourceTextureSize: SIMD2<Float>(sourceWidth, sourceHeight)
             )
