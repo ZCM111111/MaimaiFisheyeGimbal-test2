@@ -26,8 +26,8 @@ workflows:
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
             ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOLS=NO \
-            2>&1 | tee build_log.txt
-          echo "--- Archive exit code: $? ---"
+            2>&1 | tee build_log.txt | grep -E "error:|warning:|failed:|FAILED|BUILD"
+          echo "--- Archive exit code: ${PIPESTATUS[0]} ---"
       - name: Package unsigned IPA
         script: |
           echo "=== Looking for built .app ==="
