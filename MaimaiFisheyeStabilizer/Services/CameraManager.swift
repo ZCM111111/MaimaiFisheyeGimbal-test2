@@ -67,10 +67,15 @@ extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
         from connection: AVCaptureConnection
     ) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
-        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
+        // Retain the pixel buffer before dispatching to main queue
+        let retainedBuffer = pixelBuffer
+        CVPixelBufferRetain(retainedBuffer)
         DispatchQueue.main.async { [weak self] in
-            self?.currentPixelBuffer = pixelBuffer
+            self?.currentPixelBuffer = retainedBuffer
+            // Release previous buffer if any
+            if let previous = self?.currentPixelBuffer, previous !== retainedBuffer {
+                CVPixelBufferRelease(previous)
+            }
         }
     }
 }

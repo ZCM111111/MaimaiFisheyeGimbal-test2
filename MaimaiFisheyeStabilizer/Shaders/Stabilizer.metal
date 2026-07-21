@@ -107,10 +107,9 @@ fragment float4 fragmentShader(
     );
 
     // Inverse rotation = Rz(-yaw) * Ry(-pitch) * Rx(-roll)
-    // Since R(-theta) = transpose(R(theta)) and R is orthogonal,
-    // we can also compute by negating the angles
-    // Combine: R = Rz(-yaw) * Ry(-pitch) * Rx(-roll)
-    float3x3 R = Rz * Ry * Rx;
+    // Since R(-theta) = transpose(R(theta)) for orthogonal matrices,
+    // we negate the angles to get the inverse rotation
+    float3x3 R = transpose(Rz) * transpose(Ry) * transpose(Rx);
     float3 rotatedRay = R * ray;
 
     // Step 4: Project rotated ray to fisheye image plane using equidistant projection: r = f * theta
