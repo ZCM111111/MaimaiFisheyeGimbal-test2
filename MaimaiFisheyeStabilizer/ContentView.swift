@@ -1,10 +1,12 @@
 import SwiftUI
 import MetalKit
+import AVFoundation
 
 struct ContentView: View {
     @StateObject private var cameraManager = CameraManager()
     @StateObject private var metalPipeline = MetalPipeline()
     @StateObject private var motionManager = MotionManager()
+    @StateObject private var recorder = Recorder()
 
     @State private var lensProfile = LensProfile.load()
     @State private var stabilization = StabilizationParams.load()
@@ -69,6 +71,26 @@ struct ContentView: View {
                 }
                 Spacer()
             }
+
+            // Recording controls overlay
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    VStack(spacing: 8) {
+                        StatusOverlay(
+                            resolution: "1080p",
+                            isRecording: recorder.isRecording,
+                            duration: recorder.recordingDuration
+                        )
+                        RecordButton(isRecording: recorder.isRecording) {
+                            toggleRecording()
+                        }
+                    }
+                    Spacer()
+                }
+                .padding(.bottom, 32)
+            }
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(
@@ -90,11 +112,40 @@ struct ContentView: View {
         .onAppear {
             cameraManager.startSession()
             motionManager.start()
+            setupFrameForwarding()
         }
         .onDisappear {
             cameraManager.stopSession()
             motionManager.stop()
         }
+    }
+
+    private func setupFrameForwarding() {
+        cameraManager.onFrameCaptured = { pixelBuffer, presentationTime in
+            if recorder.isRecording {
+                recorder.writeFrame(pixelBuffer: pixelBuffer, presentationTime: presentationTime)
+            }
+        }
+    }
+
+    private func toggleRecording() {
+        if recorder.isRecording {
+            recorder.stopRecording {
+                // Recording stopped
+            }
+        } else {
+            let outputURL = generateOutputURL()
+            let size = CGSize(width: 1920, height: 1080)
+            recorder.startRecording(outputURL: outputURL, size: size)
+        }
+    }
+
+    private func generateOutputURL() -> URL {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd-HHmmss"
+        let filename = "Maimai_\(formatter.string(from: Date())).mov"
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        return documentsPath.appendingPathComponent(filename)
     }
 }
 

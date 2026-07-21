@@ -3,8 +3,14 @@ import Metal
 import CoreVideo
 import Combine
 
+/// Callback for each captured frame, providing both the pixel buffer and presentation time.
+typealias FrameCallback = (CVPixelBuffer, CMTime) -> Void
+
 class CameraManager: NSObject, ObservableObject {
     @Published var currentPixelBuffer: CVPixelBuffer?
+
+    /// Called on the camera session queue for every captured frame.
+    var onFrameCaptured: FrameCallback?
 
     private let captureSession = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "com.maimaiFisheyeStabilizer.cameraSession")
@@ -67,6 +73,8 @@ extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
         from connection: AVCaptureConnection
     ) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+
         // Retain the pixel buffer before dispatching to main queue
         let retainedBuffer = pixelBuffer
         CVPixelBufferRetain(retainedBuffer)
@@ -77,5 +85,8 @@ extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
                 CVPixelBufferRelease(previous)
             }
         }
+
+        // Forward frame to the callback on the session queue (synchronous, no retain needed)
+        onFrameCaptured?(pixelBuffer, presentationTime)
     }
 }
