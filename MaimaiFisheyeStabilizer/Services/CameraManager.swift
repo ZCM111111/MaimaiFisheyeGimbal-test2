@@ -79,14 +79,21 @@ extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
         let retainedBuffer = pixelBuffer
         CVPixelBufferRetain(retainedBuffer)
         DispatchQueue.main.async { [weak self] in
-            self?.currentPixelBuffer = retainedBuffer
+            guard let self = self else {
+                CVPixelBufferRelease(retainedBuffer)
+                return
+            }
+            let previous = self.currentPixelBuffer
+            self.currentPixelBuffer = retainedBuffer
             // Release previous buffer if any
-            if let previous = self?.currentPixelBuffer, previous !== retainedBuffer {
+            if let previous = previous {
                 CVPixelBufferRelease(previous)
             }
         }
 
-        // Forward frame to the callback on the session queue (synchronous, no retain needed)
+        // Forward frame to the callback on the session queue
+        // Retain before passing since Recorder may process on another queue
+        CVPixelBufferRetain(pixelBuffer)
         onFrameCaptured?(pixelBuffer, presentationTime)
     }
 }

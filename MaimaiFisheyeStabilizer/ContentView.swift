@@ -87,6 +87,14 @@ struct ContentView: View {
                         RecordButton(isRecording: recorder.isRecording) {
                             toggleRecording()
                         }
+                        if let error = recorder.recordingError {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                                .padding(4)
+                                .background(Color.black.opacity(0.6))
+                                .cornerRadius(4)
+                        }
                     }
                     Spacer()
                 }
@@ -122,9 +130,11 @@ struct ContentView: View {
     }
 
     private func setupFrameForwarding() {
-        cameraManager.onFrameCaptured = { pixelBuffer, presentationTime in
-            if recorder.isRecording {
+        cameraManager.onFrameCaptured = { [weak recorder] pixelBuffer, presentationTime in
+            if let recorder = recorder, recorder.isRecording {
                 recorder.writeFrame(pixelBuffer: pixelBuffer, presentationTime: presentationTime)
+            } else {
+                CVPixelBufferRelease(pixelBuffer)
             }
         }
     }

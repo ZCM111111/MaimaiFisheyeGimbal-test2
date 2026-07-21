@@ -9,6 +9,7 @@ class Recorder: ObservableObject {
     // MARK: - Published Properties
     @Published var isRecording: Bool = false
     @Published var recordingDuration: TimeInterval = 0.0
+    @Published var recordingError: String?
 
     // MARK: - Private State
     private var assetWriter: AVAssetWriter?
@@ -19,6 +20,13 @@ class Recorder: ObservableObject {
 
     private let recordingQueue = DispatchQueue(label: "com.maimaiFisheyeStabilizer.recorder")
     private var durationTimer: Timer?
+
+    // Internal recording flag, only accessed on recordingQueue
+    private var _isRecording: Bool = false
+
+    // Main-queue copies of timing state for the timer
+    private var mainQueueStartTime: CMTime?
+    private var mainQueueLastPresentationTime: CMTime?
 
     // MARK: - Public Methods
 
@@ -31,7 +39,7 @@ class Recorder: ObservableObject {
             guard let self = self else { return }
 
             // Prevent starting if already recording
-            guard !self.isRecording else { return }
+            guard !self._isRecording else { return }
 
             // Remove any existing file at the output URL
             let fileManager = FileManager.default
@@ -40,60 +48,78 @@ class Recorder: ObservableObject {
                     try fileManager.removeItem(at: outputURL)
                 } catch {
                     os_log("Failed to remove existing file: %{public}@", type: .error, error.localizedDescription)
+                    DispatchQueue.main.async {
+                        self.recordingError = "Failed to remove existing file: \(error.localizedDescription)"
+                    }
                     return
                 }
             }
 
             // Create asset writer
-            guard let writer = try? AVAssetWriter(url: outputURL, fileType: .mov) else {
-                os_log("Failed to create AVAssetWriter", type: .error)
+            do {
+                let writer = try AVAssetWriter(url: outputURL, fileType: .mov)
+
+                // Configure video output settings
+                let outputSettings: [String: Any] = [
+                    AVVideoCodecKey: AVVideoCodecType.h264,
+                    AVVideoWidthKey: size.width,
+                    AVVideoHeightKey: size.height
+                ]
+
+                let input = AVAssetWriterInput(mediaType: .video, outputSettings: outputSettings)
+                input.expectsMediaDataInRealTime = true
+
+                let sourcePixelBufferAttributes: [String: Any] = [
+                    kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                    kCVPixelBufferWidthKey as String: size.width,
+                    kCVPixelBufferHeightKey as String: size.height
+                ]
+
+                let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+                    assetWriterInput: input,
+                    sourcePixelBufferAttributes: sourcePixelBufferAttributes
+                )
+
+                guard writer.canAdd(input) else {
+                    os_log("Cannot add video input to asset writer", type: .error)
+                    DispatchQueue.main.async {
+                        self.recordingError = "Cannot add video input to asset writer"
+                    }
+                    return
+                }
+
+                writer.add(input)
+
+                guard writer.startWriting() else {
+                    os_log("Failed to start writing: %{public}@", type: .error, writer.error?.localizedDescription ?? "unknown")
+                    DispatchQueue.main.async {
+                        self.recordingError = "Failed to start writing: \(writer.error?.localizedDescription ?? "unknown")"
+                    }
+                    return
+                }
+
+                writer.startSession(atSourceTime: .zero)
+
+                DispatchQueue.main.async {
+                    self.assetWriter = writer
+                    self.videoInput = input
+                    self.pixelBufferAdaptor = adaptor
+                    self.isRecording = true
+                    self.recordingDuration = 0.0
+                    self.recordingStartTime = nil
+                    self.lastPresentationTime = nil
+                    self.mainQueueStartTime = nil
+                    self.mainQueueLastPresentationTime = nil
+                    self.startDurationTimer()
+                }
+
+                self._isRecording = true
+            } catch {
+                os_log("Failed to create AVAssetWriter: %{public}@", type: .error, error.localizedDescription)
+                DispatchQueue.main.async {
+                    self.recordingError = "Failed to create AVAssetWriter: \(error.localizedDescription)"
+                }
                 return
-            }
-
-            // Configure video output settings
-            let outputSettings: [String: Any] = [
-                AVVideoCodecKey: AVVideoCodecType.h264,
-                AVVideoWidthKey: size.width,
-                AVVideoHeightKey: size.height
-            ]
-
-            let input = AVAssetWriterInput(mediaType: .video, outputSettings: outputSettings)
-            input.expectsMediaDataInRealTime = true
-
-            let sourcePixelBufferAttributes: [String: Any] = [
-                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-                kCVPixelBufferWidthKey as String: size.width,
-                kCVPixelBufferHeightKey as String: size.height
-            ]
-
-            let adaptor = AVAssetWriterInputPixelBufferAdaptor(
-                assetWriterInput: input,
-                sourcePixelBufferAttributes: sourcePixelBufferAttributes
-            )
-
-            guard writer.canAdd(input) else {
-                os_log("Cannot add video input to asset writer", type: .error)
-                return
-            }
-
-            writer.add(input)
-
-            guard writer.startWriting() else {
-                os_log("Failed to start writing: %{public}@", type: .error, writer.error?.localizedDescription ?? "unknown")
-                return
-            }
-
-            writer.startSession(atSourceTime: .zero)
-
-            DispatchQueue.main.async {
-                self.assetWriter = writer
-                self.videoInput = input
-                self.pixelBufferAdaptor = adaptor
-                self.isRecording = true
-                self.recordingDuration = 0.0
-                self.recordingStartTime = nil
-                self.lastPresentationTime = nil
-                self.startDurationTimer()
             }
         }
     }
@@ -104,10 +130,22 @@ class Recorder: ObservableObject {
     ///   - presentationTime: The presentation time for this frame.
     func writeFrame(pixelBuffer: CVPixelBuffer, presentationTime: CMTime) {
         recordingQueue.async { [weak self] in
-            guard let self = self else { return }
-            guard self.isRecording else { return }
-            guard let adaptor = self.pixelBufferAdaptor else { return }
-            guard let input = self.videoInput else { return }
+            guard let self = self else {
+                CVPixelBufferRelease(pixelBuffer)
+                return
+            }
+            guard self._isRecording else {
+                CVPixelBufferRelease(pixelBuffer)
+                return
+            }
+            guard let adaptor = self.pixelBufferAdaptor else {
+                CVPixelBufferRelease(pixelBuffer)
+                return
+            }
+            guard let input = self.videoInput else {
+                CVPixelBufferRelease(pixelBuffer)
+                return
+            }
 
             // Set the start time on first frame
             if self.recordingStartTime == nil {
@@ -119,11 +157,23 @@ class Recorder: ObservableObject {
             self.lastPresentationTime = relativeTime
 
             // Wait until the input is ready for more media data
-            guard input.isReadyForMoreMediaData else { return }
+            guard input.isReadyForMoreMediaData else {
+                CVPixelBufferRelease(pixelBuffer)
+                return
+            }
 
             // Append the pixel buffer
             if !adaptor.append(pixelBuffer, withPresentationTime: relativeTime) {
                 os_log("Failed to append pixel buffer", type: .error)
+            }
+
+            // Release the buffer after writing
+            CVPixelBufferRelease(pixelBuffer)
+
+            // Update main-queue timing copies for the timer
+            DispatchQueue.main.async {
+                self.mainQueueStartTime = self.recordingStartTime
+                self.mainQueueLastPresentationTime = self.lastPresentationTime
             }
         }
     }
@@ -137,10 +187,12 @@ class Recorder: ObservableObject {
                 return
             }
 
-            guard self.isRecording else {
+            guard self._isRecording else {
                 DispatchQueue.main.async { completion() }
                 return
             }
+
+            self._isRecording = false
 
             // Mark input as finished
             self.videoInput?.markAsFinished()
@@ -154,6 +206,9 @@ class Recorder: ObservableObject {
 
                 if let error = self.assetWriter?.error {
                     os_log("Asset writer finished with error: %{public}@", type: .error, error.localizedDescription)
+                    DispatchQueue.main.async {
+                        self.recordingError = "Asset writer finished with error: \(error.localizedDescription)"
+                    }
                 }
 
                 DispatchQueue.main.async {
@@ -165,6 +220,8 @@ class Recorder: ObservableObject {
                     self.pixelBufferAdaptor = nil
                     self.recordingStartTime = nil
                     self.lastPresentationTime = nil
+                    self.mainQueueStartTime = nil
+                    self.mainQueueLastPresentationTime = nil
                     completion()
                 }
             }
@@ -177,7 +234,7 @@ class Recorder: ObservableObject {
         durationTimer?.invalidate()
         durationTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            if let startTime = self.recordingStartTime, let lastTime = self.lastPresentationTime {
+            if let startTime = self.mainQueueStartTime, let lastTime = self.mainQueueLastPresentationTime {
                 let duration = CMTimeGetSeconds(CMTimeSubtract(lastTime, startTime))
                 self.recordingDuration = max(0, duration)
             }
