@@ -10,14 +10,15 @@ workflows:
       - name: Generate Xcode project
         script: xcodegen generate
 
-      - name: Build debug
+      - name: Build (no signing)
         script: |
           xcodebuild \
             -project MaimaiFisheyeStabilizer.xcodeproj \
             -scheme MaimaiFisheyeStabilizer \
             -sdk iphoneos \
             -configuration Debug \
-            -archivePath $CM_BUILD_DIR/build.xcarchive \
-            archive
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
     artifacts:
-      - build.xcarchive/**/*.app
+      - build/**/*.app
