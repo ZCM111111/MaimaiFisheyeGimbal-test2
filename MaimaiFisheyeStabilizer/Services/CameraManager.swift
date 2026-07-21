@@ -1,46 +1,55 @@
 import AVFoundation
+import Metal
+import CoreVideo
 import Combine
 
 class CameraManager: NSObject, ObservableObject {
-    @Published var frame: CVPixelBuffer?
+    @Published var currentPixelBuffer: CVPixelBuffer?
 
     private let captureSession = AVCaptureSession()
+    private let sessionQueue = DispatchQueue(label: "com.maimaiFisheyeStabilizer.cameraSession")
     private var videoOutput: AVCaptureVideoDataOutput?
-    private let sessionQueue = DispatchQueue(label: "camera.session")
+
+    override init() {
+        super.init()
+        configureSession()
+    }
+
+    private func configureSession() {
+        captureSession.beginConfiguration()
+        defer { captureSession.commitConfiguration() }
+
+        guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
+            print("Failed to find back wide-angle camera")
+            return
+        }
+
+        do {
+            let videoInput = try AVCaptureDeviceInput(device: videoDevice)
+            if captureSession.canAddInput(videoInput) {
+                captureSession.addInput(videoInput)
+            }
+        } catch {
+            print("Failed to create video input: \(error)")
+            return
+        }
+
+        let videoOutput = AVCaptureVideoDataOutput()
+        videoOutput.videoSettings = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+        ]
+        videoOutput.alwaysDiscardsLateVideoFrames = true
+        videoOutput.setSampleBufferDelegate(self, queue: sessionQueue)
+
+        if captureSession.canAddOutput(videoOutput) {
+            captureSession.addOutput(videoOutput)
+            self.videoOutput = videoOutput
+        }
+    }
 
     func startSession() {
         sessionQueue.async { [weak self] in
-            guard let self = self else { return }
-            self.captureSession.beginConfiguration()
-            self.captureSession.sessionPreset = .high
-
-            guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
-                print("No camera found")
-                return
-            }
-
-            do {
-                let input = try AVCaptureDeviceInput(device: device)
-                if self.captureSession.canAddInput(input) {
-                    self.captureSession.addInput(input)
-                }
-            } catch {
-                print("Failed to create camera input: \(error)")
-                return
-            }
-
-            let output = AVCaptureVideoDataOutput()
-            output.setSampleBufferDelegate(self, queue: self.sessionQueue)
-            output.videoSettings = [
-                kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)
-            ]
-            if self.captureSession.canAddOutput(output) {
-                self.captureSession.addOutput(output)
-                self.videoOutput = output
-            }
-
-            self.captureSession.commitConfiguration()
-            self.captureSession.startRunning()
+            self?.captureSession.startRunning()
         }
     }
 
@@ -52,10 +61,16 @@ class CameraManager: NSObject, ObservableObject {
 }
 
 extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
-    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+    func captureOutput(
+        _ output: AVCaptureOutput,
+        didOutput sampleBuffer: CMSampleBuffer,
+        from connection: AVCaptureConnection
+    ) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        DispatchQueue.main.async {
-            self.frame = pixelBuffer
+        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
+        DispatchQueue.main.async { [weak self] in
+            self?.currentPixelBuffer = pixelBuffer
         }
     }
 }
