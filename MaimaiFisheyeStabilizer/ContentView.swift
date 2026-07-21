@@ -2,15 +2,24 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var camera = CameraManager()
+    @State private var metalPipeline: MetalPipeline?
 
     var body: some View {
-        Text("Camera running: \(camera.frame != nil ? "YES" : "NO")")
-            .font(.largeTitle)
-            .onAppear {
-                camera.startSession()
+        Group {
+            if let pipeline = metalPipeline, let frame = camera.frame {
+                CameraPreviewView(pixelBuffer: frame, metalPipeline: pipeline)
+                    .ignoresSafeArea()
+            } else {
+                Text("Initializing...")
+                    .font(.largeTitle)
             }
-            .onDisappear {
-                camera.stopSession()
-            }
+        }
+        .onAppear {
+            metalPipeline = MetalPipeline()
+            camera.startSession()
+        }
+        .onDisappear {
+            camera.stopSession()
+        }
     }
 }
