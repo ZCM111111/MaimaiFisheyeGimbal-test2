@@ -1,33 +1,39 @@
 workflows:
-  ios-debug:
-    name: iOS Debug Build
+  debug-build:
+    name: Debug Build + IPA
+    instance_type: mac_mini_m1
+    max_build_duration: 30
     environment:
-      xcode: 16.0
+      xcode: "16.2"
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+      cancel_previous_builds: true
     scripts:
       - name: Install XcodeGen
         script: brew install xcodegen
-
       - name: Generate Xcode project
         script: xcodegen generate
-
-      - name: Archive
+      - name: Build for device
         script: |
-          xcodebuild \
+          xcodebuild build \
             -project MaimaiFisheyeStabilizer.xcodeproj \
             -scheme MaimaiFisheyeStabilizer \
-            -sdk iphoneos \
-            -configuration Release \
-            -archivePath $CM_BUILD_DIR/build.xcarchive \
-            CODE_SIGNING_ALLOWED=NO \
+            -destination 'generic/platform=iOS' \
+            -configuration Debug \
             CODE_SIGN_IDENTITY="" \
-            archive
-
-      - name: Export IPA
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Package unsigned IPA
         script: |
-          xcodebuild \
-            -exportArchive \
-            -archivePath $CM_BUILD_DIR/build.xcarchive \
-            -exportPath $CM_BUILD_DIR/output \
-            -exportOptionsPlist exportOptions.plist
+          APP_PATH=$(find $HOME/Library/Developer/Xcode/DerivedData -name "MaimaiFisheyeStabilizer.app" -path "*/Debug-iphoneos/*" 2>/dev/null | head -1)
+          echo "Found app: $APP_PATH"
+          mkdir -p $CM_BUILD_DIR/build/Payload
+          cp -R "$APP_PATH" $CM_BUILD_DIR/build/Payload/
+          cd $CM_BUILD_DIR/build
+          zip -r MaimaiFisheyeStabilizer-unsigned.ipa Payload/
+          ls -lh MaimaiFisheyeStabilizer-unsigned.ipa
     artifacts:
-      - output/*.ipa
+      - build/MaimaiFisheyeStabilizer-unsigned.ipa
