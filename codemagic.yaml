@@ -14,24 +14,25 @@ workflows:
     scripts:
       - name: Build for device (no code signing)
         script: |
-          xcodebuild build \
+          xcodebuild archive \
             -project "Stable Action.xcodeproj" \
             -scheme "Stable Action" \
             -destination 'generic/platform=iOS' \
             -configuration Debug \
+            -archivePath "$CM_BUILD_DIR/build/StableAction.xcarchive" \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
             2>&1 | tee build_log.txt
-          echo "--- Build exit code: $? ---"
+          echo "--- Archive exit code: $? ---"
       - name: Package unsigned IPA
         script: |
           echo "=== Looking for built .app ==="
-          find $HOME/Library/Developer/Xcode/DerivedData -name "Stable Action.app" -path "*/Debug-iphoneos/*" 2>/dev/null
+          find $CM_BUILD_DIR/build -name "Stable Action.app" 2>/dev/null
 
-          APP_PATH=$(find $HOME/Library/Developer/Xcode/DerivedData -name "Stable Action.app" -path "*/Debug-iphoneos/*" 2>/dev/null | head -1)
+          APP_PATH=$(find $CM_BUILD_DIR/build -name "Stable Action.app" 2>/dev/null | head -1)
           if [ -z "$APP_PATH" ]; then
             echo "Error: Could not find built .app"
             echo "=== Build log (last 100 lines) ==="
