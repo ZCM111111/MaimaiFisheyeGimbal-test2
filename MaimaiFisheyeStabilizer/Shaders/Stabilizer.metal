@@ -53,31 +53,24 @@ fragment float4 fragmentShader(
     float2 srcSize = u.sourceTextureSize;
 
     // --- Step 1: Compute output crop rectangle in source pixels ---
-    // Aspect ratio of output
-    float outAspect = outSize.x / outSize.y;
-    // Aspect ratio of source
-    float srcAspect = srcSize.x / srcSize.y;
+    // For a fisheye lens, the source is a circular fisheye image.
+    // We want to crop a rectilinear (normal-looking) region from the center.
+    // The crop size is determined by outputFov relative to the fisheye's full coverage.
 
-    // Output FOV in radians
-    float halfFovRad = radians(u.outputFov * 0.5);
-    float tanHalfFov = tan(halfFovRad);
+    // Fisheye coverage: ~238° means the full circle fits in the source image.
+    // The usable rectilinear region is roughly in the center.
+    // For a 100° output FOV from a 238° fisheye, we use about 42% of the radius.
 
-    // Crop size in source pixels: the output covers a certain angular width
-    // For a fisheye lens, angular coverage is roughly proportional to pixel distance from center
-    // We'll use a simple approximation: crop width = focal_length * angular_width
-    // where focal_length is estimated from source dimensions
-    float focalLength = srcSize.x / (2.0 * tan(halfFovRad * 2.0)); // rough estimate for wide angle
-
-    // Actually, simpler: just define crop as a fraction of source
-    // For 238° fisheye, a 100° output FOV is about 42% of the angular range
     float cropFraction = u.outputFov / 238.0;
 
-    float cropW = srcSize.x * cropFraction;
-    float cropH = cropW / outAspect;
+    // The fisheye image is typically circular; the rectilinear crop is from the center.
+    // We limit the crop to stay within the central region (avoid extreme fisheye distortion).
+    float maxCropFraction = 0.6; // Use at most 60% of the source (central region)
+    cropFraction = min(cropFraction, maxCropFraction);
 
-    // Clamp to available source
-    cropW = min(cropW, srcSize.x * 0.95);
-    cropH = min(cropH, srcSize.y * 0.95);
+    // Crop size in source pixels
+    float cropW = srcSize.x * cropFraction;
+    float cropH = srcSize.y * cropFraction;
 
     // Margins: how much we can shift before hitting edges
     float marginX = (srcSize.x - cropW) * 0.5;

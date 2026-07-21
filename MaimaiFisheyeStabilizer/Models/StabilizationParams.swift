@@ -10,7 +10,7 @@ struct StabilizationParams: Codable {
         strength: 1.0,
         smoothing: 0.15,
         maxOffset: 0.5,
-        outputFov: 100.0
+        outputFov: 60.0  // Narrower FOV for more aggressive stabilization
     )
 
     // MARK: - Persistence
