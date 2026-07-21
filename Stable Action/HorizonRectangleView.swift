@@ -29,11 +29,11 @@ final class MotionManager: ObservableObject {
     private var _snapOffsetY: Double = 0.0
 
     /// Atomic read of the latest motion state — safe to call from any thread.
-    func snapshot() -> (roll: Double, pitch: Double, offsetX: Double, offsetY: Double) {
+    func snapshot() -> (roll: Double, offsetX: Double, offsetY: Double, pitch: Double) {
         snapshotLock.lock()
-        let r = _snapRoll; let p = _snapPitch; let x = _snapOffsetX; let y = _snapOffsetY
+        let r = _snapRoll; let x = _snapOffsetX; let y = _snapOffsetY; let p = _snapPitch
         snapshotLock.unlock()
-        return (r, p, x, y)
+        return (r, x, y, p)
     }
 
     private let motionManager = CMMotionManager()
