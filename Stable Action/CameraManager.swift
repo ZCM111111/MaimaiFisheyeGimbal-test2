@@ -48,12 +48,6 @@ final class CameraManager: NSObject, ObservableObject {
     nonisolated(unsafe) private var isRecordingFlag = false
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
 
-    // MARK: - Smoothing state (accessed only on dataOutputQueue)
-
-    nonisolated(unsafe) private var smoothedRoll:  Double = 0.0
-    nonisolated(unsafe) private var smoothedNormX: Double = 0.0
-    nonisolated(unsafe) private var smoothedNormY: Double = 0.0
-
     // ★ VERTICAL LOCK ★  Smoothed pitch angle for the frame pipeline.
     nonisolated(unsafe) private var smoothedPitch: Double = 0.0
 
@@ -74,8 +68,7 @@ final class CameraManager: NSObject, ObservableObject {
     @Published var actionModeEnabled = false {
         didSet {
             actionModeFlag = actionModeEnabled
-            // Always use ultra-wide angle (0.5x) for maximum stabilization margin
-            cameraType = .ultraWide
+            cameraType = actionModeEnabled ? .ultraWide : .wide
             sessionQueue.async { self.applyStabilization() }
         }
     }
