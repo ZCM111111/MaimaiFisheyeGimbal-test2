@@ -23,8 +23,11 @@ struct LensProfile: Codable, Equatable {
 
     /// Save this profile to UserDefaults as JSON.
     func save() {
-        if let data = try? JSONEncoder().encode(self) {
+        do {
+            let data = try JSONEncoder().encode(self)
             UserDefaults.standard.set(data, forKey: LensProfile.storageKey)
+        } catch {
+            os_log("Failed to save LensProfile: %{public}@", type: .error, error.localizedDescription)
         }
     }
 

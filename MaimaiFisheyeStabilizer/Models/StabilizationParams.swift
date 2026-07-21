@@ -19,8 +19,11 @@ struct StabilizationParams: Codable {
 
     /// Save these parameters to UserDefaults as JSON.
     func save() {
-        if let data = try? JSONEncoder().encode(self) {
+        do {
+            let data = try JSONEncoder().encode(self)
             UserDefaults.standard.set(data, forKey: StabilizationParams.storageKey)
+        } catch {
+            os_log("Failed to save StabilizationParams: %{public}@", type: .error, error.localizedDescription)
         }
     }
 
