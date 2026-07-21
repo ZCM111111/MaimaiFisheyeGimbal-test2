@@ -1,31 +1,57 @@
 import CoreMotion
-import simd
+import Combine
 
 class MotionManager: ObservableObject {
-    // Current orientation as quaternion (x, y, z, w)
-    @Published var orientation: Quat = .identity
+    // MARK: - Published Properties
+    @Published var roll: Double = 0.0
+    @Published var pitch: Double = 0.0
+    @Published var yaw: Double = 0.0
 
-    // Reference orientation (what we consider "stable")
-    private var referenceOrientation: Quat = .identity
+    // MARK: - Configuration
+    var smoothingAlpha: Double = 0.15
 
-    // Raw quaternion from CMDeviceMotion
-    private var rawQuat: Quat = .identity
-
-    // Smoothing
-    private var smoothedQuat: Quat = .identity
-    private let smoothingAlpha: Float = 0.15 // Lower = smoother, higher = more responsive
-
+    // MARK: - Private State
     private let motionManager = CMMotionManager()
+
+    // Raw angles (for unwrapping)
+    private var previousRawRoll: Double = 0.0
+    private var previousRawPitch: Double = 0.0
+    private var previousRawYaw: Double = 0.0
+
+    // Unwrapped angles (continuous, no ±180° jumps)
+    private var unwrappedRoll: Double = 0.0
+    private var unwrappedPitch: Double = 0.0
+    private var unwrappedYaw: Double = 0.0
+
+    // Smoothed angles
+    private var smoothedRoll: Double = 0.0
+    private var smoothedPitch: Double = 0.0
+    private var smoothedYaw: Double = 0.0
+
+    // Reference (center) angles for resetCenter()
+    private var referenceRoll: Double = 0.0
+    private var referencePitch: Double = 0.0
+    private var referenceYaw: Double = 0.0
+
+    // Track if we have received at least one update
+    private var hasFirstReading: Bool = false
+
+    // MARK: - Public Methods
 
     func start() {
         guard motionManager.isDeviceMotionAvailable else {
-            print("Device motion not available")
+            print("Device motion is not available on this device.")
             return
         }
+
         motionManager.deviceMotionUpdateInterval = 1.0 / 120.0 // 120 Hz
-        motionManager.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: .main) { [weak self] motion, error in
-            guard let motion = motion else { return }
-            self?.handleMotion(motion)
+
+        motionManager.startDeviceMotionUpdates(
+            using: .xMagneticNorthZVertical,
+            to: .main
+        ) { [weak self] motion, error in
+            guard let self = self, let motion = motion else { return }
+            self.handleMotion(motion)
         }
     }
 
@@ -33,78 +59,84 @@ class MotionManager: ObservableObject {
         motionManager.stopDeviceMotionUpdates()
     }
 
-    // Re-center: set current orientation as the reference
-    func reCenter() {
-        referenceOrientation = smoothedQuat
+    func resetCenter() {
+        referenceRoll = smoothedRoll
+        referencePitch = smoothedPitch
+        referenceYaw = smoothedYaw
     }
+
+    // MARK: - Private Methods
 
     private func handleMotion(_ motion: CMDeviceMotion) {
-        let q = motion.attitude.quaternion
+        let attitude = motion.attitude
 
-        // Convert CMQuaternion to SIMD4<Float> (x,y,z,w)
-        rawQuat = Quat(Float(q.x), Float(q.y), Float(q.z), Float(q.w))
+        let rawRoll = attitude.roll
+        let rawPitch = attitude.pitch
+        let rawYaw = attitude.yaw
 
-        // Apply exponential moving average smoothing
-        smoothedQuat = slerp(smoothedQuat, rawQuat, alpha: smoothingAlpha)
+        if !hasFirstReading {
+            // Initialize all state with first reading
+            previousRawRoll = rawRoll
+            previousRawPitch = rawPitch
+            previousRawYaw = rawYaw
 
-        // The orientation relative to reference
-        // orientation = inverse(reference) * current
-        // This gives us the rotation FROM reference TO current
-        orientation = quatMul(quatConj(referenceOrientation), smoothedQuat)
-    }
+            unwrappedRoll = rawRoll
+            unwrappedPitch = rawPitch
+            unwrappedYaw = rawYaw
 
-    // Quaternion SLERP for smooth interpolation
-    private func slerp(_ a: Quat, _ b: Quat, alpha: Float) -> Quat {
-        var dot = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w
+            smoothedRoll = rawRoll
+            smoothedPitch = rawPitch
+            smoothedYaw = rawYaw
 
-        // If dot is negative, negate one quaternion to take the shorter path
-        var b = b
-        if dot < 0 {
-            b = Quat(-b.x, -b.y, -b.z, -b.w)
-            dot = -dot
+            referenceRoll = rawRoll
+            referencePitch = rawPitch
+            referenceYaw = rawYaw
+
+            hasFirstReading = true
+
+            updatePublishedValues()
+            return
         }
 
-        // If quaternions are very close, use linear interpolation
-        if dot > 0.9995 {
-            let result = Quat(
-                a.x + alpha * (b.x - a.x),
-                a.y + alpha * (b.y - a.y),
-                a.z + alpha * (b.z - a.z),
-                a.w + alpha * (b.w - a.w)
-            )
-            return normalizeQuat(result)
+        // Angle unwrapping: handle ±180° boundary crossings
+        unwrappedRoll = unwrapAngle(new: rawRoll, previous: previousRawRoll, accumulated: unwrappedRoll)
+        unwrappedPitch = unwrapAngle(new: rawPitch, previous: previousRawPitch, accumulated: unwrappedPitch)
+        unwrappedYaw = unwrapAngle(new: rawYaw, previous: previousRawYaw, accumulated: unwrappedYaw)
+
+        // Update previous raw values
+        previousRawRoll = rawRoll
+        previousRawPitch = rawPitch
+        previousRawYaw = rawYaw
+
+        // Exponential moving average smoothing
+        smoothedRoll = smoothingAlpha * unwrappedRoll + (1.0 - smoothingAlpha) * smoothedRoll
+        smoothedPitch = smoothingAlpha * unwrappedPitch + (1.0 - smoothingAlpha) * smoothedPitch
+        smoothedYaw = smoothingAlpha * unwrappedYaw + (1.0 - smoothingAlpha) * smoothedYaw
+
+        updatePublishedValues()
+    }
+
+    /// Unwraps an angle to maintain continuity across ±π boundaries.
+    /// When the raw angle jumps by more than π, we add/subtract 2π to maintain continuity.
+    private func unwrapAngle(new: Double, previous: Double, accumulated: Double) -> Double {
+        let delta = new - previous
+
+        if delta > .pi {
+            // Jumped backward across the boundary (e.g., 179° to -179°)
+            return accumulated + delta - 2.0 * .pi
+        } else if delta < -.pi {
+            // Jumped forward across the boundary (e.g., -179° to 179°)
+            return accumulated + delta + 2.0 * .pi
+        } else {
+            // Normal small change
+            return accumulated + delta
         }
-
-        let theta = acos(dot)
-        let sinTheta = sin(theta)
-        let aFactor = sin((1 - alpha) * theta) / sinTheta
-        let bFactor = sin(alpha * theta) / sinTheta
-
-        return Quat(
-            a.x * aFactor + b.x * bFactor,
-            a.y * aFactor + b.y * bFactor,
-            a.z * aFactor + b.z * bFactor,
-            a.w * aFactor + b.w * bFactor
-        )
     }
 
-    private func normalizeQuat(_ q: Quat) -> Quat {
-        let len = sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w)
-        if len < 1e-6 { return .identity }
-        return Quat(q.x / len, q.y / len, q.z / len, q.w / len)
+    private func updatePublishedValues() {
+        // Subtract reference (center) to get relative angles
+        roll = smoothedRoll - referenceRoll
+        pitch = smoothedPitch - referencePitch
+        yaw = smoothedYaw - referenceYaw
     }
-}
-
-// Quaternion math helpers
-func quatMul(_ a: Quat, _ b: Quat) -> Quat {
-    return Quat(
-        a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
-        a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
-        a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
-        a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z
-    )
-}
-
-func quatConj(_ q: Quat) -> Quat {
-    return Quat(-q.x, -q.y, -q.z, q.w)
 }
