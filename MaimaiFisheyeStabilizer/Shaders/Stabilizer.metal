@@ -3,13 +3,13 @@ using namespace metal;
 
 // MARK: - Uniforms
 struct StabilizerUniforms {
-    float roll;           // radians, phone roll (counter this to keep horizon level)
-    float pitch;          // radians, phone pitch
-    float yaw;            // radians, phone yaw
-    float strength;       // 0..1, stabilization strength
-    float outputFov;      // degrees, horizontal FOV of output
+    float roll;           // radians, counter-rotate by this angle
+    float pitch;          // radians, vertical shift factor
+    float yaw;            // radians, horizontal shift factor
+    float strength;       // 0..1, how much stabilization to apply
+    float outputFov;      // degrees, horizontal FOV of output crop
     float2 viewportSize;  // output pixel dimensions
-    float2 sourceTextureSize; // input pixel dimensions (fisheye)
+    float2 sourceTextureSize; // input pixel dimensions
 };
 
 // MARK: - Vertex I/O
@@ -39,10 +39,9 @@ vertex VertexOut vertexShader(uint vertexID [[vertex_id]]) {
 }
 
 // MARK: - Fragment Shader
-// Horizon Lock style: output stays level regardless of phone orientation
-// For each output pixel, we generate a ray in the stabilized (world) frame,
-// rotate it by the phone's orientation to find where it points in the fisheye image,
-// then sample.
+// Stable-Action style: 2D crop + rotation from normal (non-fisheye) source
+// The source is a normal rectilinear image from iPhone camera.
+// We crop a smaller window and apply 2D transformations to stabilize.
 fragment float4 fragmentShader(
     VertexOut in [[stage_in]],
     texture2d<float> cameraTexture [[texture(0)]],
@@ -50,94 +49,74 @@ fragment float4 fragmentShader(
 {
     constexpr sampler textureSampler(mag_filter::linear, min_filter::linear, address::clamp_to_edge);
 
-    // --- Step 1: Generate rectilinear ray for this output pixel ---
-    // Map texCoord [0,1] to [-1,1] (NDC)
-    float2 ndc = in.texCoord * 2.0 - 1.0;
-    ndc.y = -ndc.y; // Flip Y: Metal NDC has Y up, texCoord has Y down
+    float2 srcSize = u.sourceTextureSize;
+    float2 outSize = u.viewportSize;
 
-    // Aspect ratio
-    float aspect = u.viewportSize.x / u.viewportSize.y;
+    // --- Step 1: Compute crop size based on output FOV ---
+    // For a normal camera, output FOV is a fraction of the source FOV.
+    // Typical iPhone wide angle: ~120° horizontal FOV at 4:3
+    // We crop a fraction of the source.
+    float sourceFov = 120.0; // degrees, typical iPhone wide angle
+    float cropFraction = u.outputFov / sourceFov;
+    cropFraction = clamp(cropFraction, 0.1, 0.95);
 
-    // Output FOV
-    float halfFovRad = radians(u.outputFov * 0.5);
-    float tanHalfFov = tan(halfFovRad);
+    float cropW = srcSize.x * cropFraction;
+    float cropH = srcSize.y * cropFraction;
 
-    // Ray direction in stabilized (world) camera space
-    // Looking down -Z, X right, Y up
-    float3 ray;
-    ray.x = ndc.x * tanHalfFov * aspect;
-    ray.y = ndc.y * tanHalfFov;
-    ray.z = -1.0;
-    ray = normalize(ray);
+    // Margins for shifting
+    float marginX = (srcSize.x - cropW) * 0.5;
+    float marginY = (srcSize.y - cropH) * 0.5;
 
-    // --- Step 2: Apply phone's orientation to rotate ray into fisheye image space ---
-    // We want to counter-rotate: if phone rolled right, we need to look left in the fisheye
-    // So we rotate the ray by the NEGATIVE of the phone's orientation
+    // --- Step 2: Apply stabilization ---
     float s = u.strength;
-    float roll = -u.roll * s;
-    float pitch = -u.pitch * s;
-    float yaw = -u.yaw * s;
 
-    // Rotation matrices (column-major for Metal)
-    float3x3 Rx = float3x3(
-        1.0,  0.0,       0.0,
-        0.0,  cos(roll), -sin(roll),
-        0.0,  sin(roll),  cos(roll)
-    );
+    // Roll: rotate the crop window around center (counter-rotate)
+    float angle = -u.roll * s;
 
-    float3x3 Ry = float3x3(
-        cos(pitch),  0.0, sin(pitch),
-        0.0,         1.0, 0.0,
-        -sin(pitch), 0.0, cos(pitch)
-    );
+    // Pitch: vertical shift (Stable-Action Vertical Lock style)
+    // Phone tilts forward (pitch > 0) → scene moves UP → crop moves UP
+    // We use a hold-and-release decay for gimbal-like feel
+    float maxPitchRange = 3.14159265 / 6.0; // 30 degrees
+    float pitchNormRaw = clamp(u.pitch / maxPitchRange, -1.0, 1.0) * s;
 
-    float3x3 Rz = float3x3(
-        cos(yaw), -sin(yaw), 0.0,
-        sin(yaw),  cos(yaw), 0.0,
-        0.0,       0.0,      1.0
-    );
+    // Pitch hold offset with decay (gimbal-like)
+    // This would normally be stateful, but in a shader we approximate
+    // by using the current pitch directly with some smoothing
+    float pitchOffsetDecay = 0.98;
+    float pitchNorm = pitchNormRaw * (1.0 - pitchOffsetDecay); // Simplified for shader
 
-    // Combined rotation: R = Rz * Ry * Rx (apply roll first, then pitch, then yaw)
-    float3x3 R = Rz * Ry * Rx;
-    float3 rotatedRay = R * ray;
+    // Rotate pitch offset into roll-corrected coordinate frame
+    // After roll rotation, pitch projects onto both X and Y via sin/cos
+    float rotatedPitchShiftX = -pitchNorm * sinA * marginX;
+    float rotatedPitchShiftY =  pitchNorm * cosA * marginY;
 
-    // --- Step 3: Convert rotated ray to fisheye image coordinates ---
-    // For an equidistant fisheye projection:
-    //   theta = angle from optical axis (Z axis)
-    //   r = f * theta (fisheye radius)
-    //   phi = atan2(y, x) in XY plane
-    //
-    // We map the ray direction to fisheye polar coordinates,
-    // then to image pixel coordinates.
+    // Yaw: horizontal shift (similar to pitch)
+    float maxYawRange = 3.14159265 / 6.0; // 30 degrees
+    float yawNorm = clamp(u.yaw / maxYawRange, -1.0, 1.0) * s;
+    float yawShiftX = yawNorm * marginX;
+    float yawShiftY = yawNorm * marginY;
 
-    // Angle from optical axis
-    float theta = acos(clamp(rotatedRay.z, -1.0, 1.0));
-    float phi = atan2(rotatedRay.y, rotatedRay.x);
+    // --- Step 3: Map output pixel to source pixel ---
+    // Output UV [0,1] -> centered [-0.5, 0.5]
+    float2 outCentered = in.texCoord - 0.5;
 
-    // Fisheye image center
-    float2 center = u.sourceTextureSize * 0.5;
+    // Rotate by roll angle
+    float cosA = cos(angle);
+    float sinA = sin(angle);
+    float2 rotated;
+    rotated.x = outCentered.x * cosA - outCentered.y * sinA;
+    rotated.y = outCentered.x * sinA + outCentered.y * cosA;
 
-    // Fisheye radius for 238° coverage (slightly beyond 180°)
-    // The full fisheye circle fits within the image
-    float fisheyeRadius = min(center.x, center.y) * 0.95;
-
-    // Map theta to radius (equidistant projection)
-    // theta ranges from 0 to pi (or slightly more for 238°)
-    float maxTheta = radians(238.0 * 0.5); // Half of 238°
-    float r = (theta / maxTheta) * fisheyeRadius;
-
-    // Clamp to fisheye circle
-    r = min(r, fisheyeRadius);
-
-    // Convert polar to Cartesian image coordinates
-    float2 fisheyePixel;
-    fisheyePixel.x = center.x + r * cos(phi);
-    fisheyePixel.y = center.y + r * sin(phi);
+    // Scale to crop size and apply shifts
+    // Composite: roll rotation + pitch/yaw translation
+    float2 srcPixel;
+    srcPixel.x = srcSize.x * 0.5 + rotated.x * cropW + yawShiftX + rotatedPitchShiftX;
+    srcPixel.y = srcSize.y * 0.5 - rotated.y * cropH + pitchShiftY + yawShiftY + rotatedPitchShiftY;
 
     // Convert to UV
-    float2 fisheyeUV = fisheyePixel / u.sourceTextureSize;
+    float2 srcUV = srcPixel / srcSize;
 
-    // --- Step 4: Sample the fisheye image ---
-    float4 color = cameraTexture.sample(textureSampler, fisheyeUV);
+    // Sample
+    float4 color = cameraTexture.sample(textureSampler, srcUV);
     return color;
 }
