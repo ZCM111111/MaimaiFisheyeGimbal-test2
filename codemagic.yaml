@@ -19,6 +19,7 @@ workflows:
             -configuration Debug \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
-            build
+            -quiet \
+            build 2>&1 | grep -i "error" || true
     artifacts:
       - build/**/*.app
