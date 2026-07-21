@@ -1,0 +1,86 @@
+workflows:
+  ios-debug:
+    name: iOS Debug Build
+    environment:
+      flutter: false
+      xcode: 15.0
+      cocoapods: default
+    scripts:
+      - name: Install XcodeGen
+        script: |
+          brew install xcodegen
+
+      - name: Generate Xcode project
+        script: |
+          xcodegen generate
+
+      - name: Set up code signing
+        script: |
+          keychain initialize
+          # Add your Apple certificate and profile here
+          # keychain add-certificates
+          # Fetch provisioning profiles
+
+      - name: Build debug
+        script: |
+          xcodebuild \
+            -project MaimaiFisheyeStabilizer.xcodeproj \
+            -scheme MaimaiFisheyeStabilizer \
+            -sdk iphoneos \
+            -configuration Debug \
+            -archivePath $CM_BUILD_DIR/build.xcarchive \
+            archive
+
+    artifacts:
+      - build.xcarchive/**/*.app
+
+  ios-release:
+    name: iOS Release (TestFlight)
+    environment:
+      flutter: false
+      xcode: 15.0
+      cocoapods: default
+      vars:
+        XCODE_PROJECT: "MaimaiFisheyeStabilizer.xcodeproj"
+        XCODE_SCHEME: "MaimaiFisheyeStabilizer"
+    scripts:
+      - name: Install XcodeGen
+        script: |
+          brew install xcodegen
+
+      - name: Generate Xcode project
+        script: |
+          xcodegen generate
+
+      - name: Set up code signing
+        script: |
+          keychain initialize
+          keychain add-certificates
+          # Fetch provisioning profiles from Codemagic
+
+      - name: Build release
+        script: |
+          xcodebuild \
+            -project $XCODE_PROJECT \
+            -scheme $XCODE_SCHEME \
+            -sdk iphoneos \
+            -configuration Release \
+            -archivePath $CM_BUILD_DIR/build.xcarchive \
+            archive
+
+      - name: Export IPA
+        script: |
+          xcodebuild \
+            -exportArchive \
+            -archivePath $CM_BUILD_DIR/build.xcarchive \
+            -exportPath $CM_BUILD_DIR/output \
+            -exportOptionsPlist exportOptions.plist
+
+    artifacts:
+      - output/*.ipa
+
+    publishing:
+      app_store_connect:
+        api_key: $APP_STORE_CONNECT_API_KEY
+        # Submit to TestFlight automatically
+        submit_to_testflight: true
