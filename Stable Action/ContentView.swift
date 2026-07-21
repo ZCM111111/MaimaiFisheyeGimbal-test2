@@ -176,7 +176,7 @@ struct ContentView: View {
         .onAppear {
             // Wire the thread-safe snapshot provider for the frame pipeline
             camera.motionSnapshotProvider = { [weak motion] in
-                motion?.snapshot() ?? (0, 0, 0)
+                motion?.snapshot() ?? (0, 0, 0, 0)
             }
             // Keep legacy providers for backwards compatibility
             camera.rollProvider = { [weak motion] in motion?.roll ?? 0.0 }
