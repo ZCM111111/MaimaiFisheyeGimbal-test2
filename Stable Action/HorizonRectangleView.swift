@@ -17,21 +17,23 @@ final class MotionManager: ObservableObject {
 
     // ── Published for SwiftUI (HorizonRectangleView overlay) ──────────
     @Published var roll: Double = 0.0
+    @Published var pitch: Double = 0.0
     @Published var offsetX: Double = 0.0
     @Published var offsetY: Double = 0.0
 
     // ── Thread-safe snapshot for CameraManager (read from data-output queue) ──
     private let snapshotLock = NSLock()
     private var _snapRoll:    Double = 0.0
+    private var _snapPitch:   Double = 0.0
     private var _snapOffsetX: Double = 0.0
     private var _snapOffsetY: Double = 0.0
 
     /// Atomic read of the latest motion state — safe to call from any thread.
-    func snapshot() -> (roll: Double, offsetX: Double, offsetY: Double) {
+    func snapshot() -> (roll: Double, pitch: Double, offsetX: Double, offsetY: Double) {
         snapshotLock.lock()
-        let r = _snapRoll; let x = _snapOffsetX; let y = _snapOffsetY
+        let r = _snapRoll; let p = _snapPitch; let x = _snapOffsetX; let y = _snapOffsetY
         snapshotLock.unlock()
-        return (r, x, y)
+        return (r, p, x, y)
     }
 
     private let motionManager = CMMotionManager()
@@ -44,23 +46,28 @@ final class MotionManager: ObservableObject {
     private var previousRawRoll: Double = 0.0
     private var rollUnwrapped:   Double = 0.0
 
+    // Continuous pitch tracking — unwraps atan2 jumps at ±180°
+    private var previousRawPitch: Double = 0.0
+    private var pitchUnwrapped:   Double = 0.0
+
     // ── Tuning constants ──────────────────────────────────────────────
     private let dt: Double = 1.0 / 120.0
 
     // Velocity decay: controls how fast lateral momentum bleeds off.
-    // Lower = smoother panning feel; higher = snappier stop.
     private let velocityDecay: Double = 0.82
 
     // Position decay: how quickly the crop drifts back to centre when still.
-    // Closer to 1.0 = slower return (more gimbal-like hold).
     private let positionDecay: Double = 0.992
 
     // Sensitivity: maps acceleration (m/s²) to normalised crop offset.
-    // Higher = crop reacts more to lateral movement (gimbal-like subject tracking).
     private let sensitivity: Double = 0.035
 
     // Acceleration dead-zone: ignore tiny vibrations below this threshold (m/s²).
     private let accelDeadZone: Double = 0.02
+
+    // Pitch tuning
+    private let maxPitchRange: Double = .pi / 6    // 30 degrees
+    private let pitchDeadZone: Double = 0.005      // ~0.3 degrees
 
     func start() {
         guard motionManager.isDeviceMotionAvailable else { return }
@@ -77,14 +84,27 @@ final class MotionManager: ObservableObject {
             guard let self, let data else { return }
 
             // ── Roll (continuous 360°, no flip at ±180°) ─────────────────
-            let rawRoll = atan2(data.gravity.x, -data.gravity.y)  // in (-π, π]
+            let rawRoll = atan2(data.gravity.x, -data.gravity.y)
             var delta = rawRoll - self.previousRawRoll
-            // Unwrap: if the jump is > π it crossed the ±180° boundary
             if delta >  Double.pi { delta -= 2 * Double.pi }
             if delta < -Double.pi { delta += 2 * Double.pi }
             self.previousRawRoll  = rawRoll
             self.rollUnwrapped   += delta
             let newRoll = self.rollUnwrapped
+
+            // ── Pitch (continuous, no flip at ±180°) ────────────────────
+            let rawPitch = atan2(data.gravity.y, -data.gravity.z)
+            var pitchDelta = rawPitch - self.previousRawPitch
+            if pitchDelta >  Double.pi { pitchDelta -= 2 * Double.pi }
+            if pitchDelta < -Double.pi { pitchDelta += 2 * Double.pi }
+            self.previousRawPitch  = rawPitch
+            self.pitchUnwrapped   += pitchDelta
+
+            var newPitch = self.pitchUnwrapped
+            // Dead-zone: hold previous value when wobble is sub-threshold
+            if abs(pitchDelta) < self.pitchDeadZone {
+                newPitch = self._snapPitch
+            }
 
             // ── Translation (X/Y shift) ───────────────────────────────
             var ax = data.userAcceleration.x
@@ -110,6 +130,7 @@ final class MotionManager: ObservableObject {
             // Write to thread-safe snapshot (for CameraManager)
             self.snapshotLock.lock()
             self._snapRoll    = newRoll
+            self._snapPitch   = newPitch
             self._snapOffsetX = newOffX
             self._snapOffsetY = newOffY
             self.snapshotLock.unlock()
@@ -117,6 +138,7 @@ final class MotionManager: ObservableObject {
             // Publish to main thread for SwiftUI overlay
             DispatchQueue.main.async {
                 self.roll    = newRoll
+                self.pitch   = newPitch
                 self.offsetX = newOffX
                 self.offsetY = newOffY
             }
@@ -126,12 +148,13 @@ final class MotionManager: ObservableObject {
     func stop() {
         motionManager.stopDeviceMotionUpdates()
         snapshotLock.lock()
-        _snapRoll = 0; _snapOffsetX = 0; _snapOffsetY = 0
+        _snapRoll = 0; _snapPitch = 0; _snapOffsetX = 0; _snapOffsetY = 0
         snapshotLock.unlock()
         velX = 0; velY = 0
         previousRawRoll = 0; rollUnwrapped = 0
+        previousRawPitch = 0; pitchUnwrapped = 0
         DispatchQueue.main.async { [weak self] in
-            self?.roll = 0; self?.offsetX = 0; self?.offsetY = 0
+            self?.roll = 0; self?.pitch = 0; self?.offsetX = 0; self?.offsetY = 0
         }
     }
 }
@@ -160,6 +183,11 @@ struct HorizonRectangleView: View {
             let shiftX  = CGFloat(motion.offsetX) * marginX * 0.9
             let shiftY  = CGFloat(motion.offsetY) * marginY * 0.9
 
+            // Pitch-based vertical shift
+            let maxPitch = CGFloat(Double.pi / 6)
+            let pitchNorm = max(-1.0, min(1.0, CGFloat(motion.pitch) / maxPitch))
+            let pitchShiftY = pitchNorm * marginY
+
             ZStack {
                 Rectangle()
                     .fill(Color.white.opacity(0.04))
@@ -173,7 +201,7 @@ struct HorizonRectangleView: View {
             }
             .frame(width: rectW, height: rectH)
             .rotationEffect(.radians(angle))
-            .position(x: cW / 2 + shiftX, y: cH / 2 - shiftY)  // negate Y: UIKit Y↓ vs CIImage Y↑
+            .position(x: cW / 2 + shiftX, y: cH / 2 - shiftY + pitchShiftY)
         }
     }
 }

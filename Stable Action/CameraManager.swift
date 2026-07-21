@@ -48,11 +48,14 @@ final class CameraManager: NSObject, ObservableObject {
     nonisolated(unsafe) private var isRecordingFlag = false
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
 
-    // MARK: - Smoothing state (accessed only on dataOutputQueue)
+    // ★ VERTICAL LOCK ★  Smoothed pitch angle for the frame pipeline.
+    nonisolated(unsafe) private var smoothedPitch: Double = 0.0
 
-    nonisolated(unsafe) private var smoothedRoll:   Double = 0.0
-    nonisolated(unsafe) private var smoothedNormX:  Double = 0.0
-    nonisolated(unsafe) private var smoothedNormY:  Double = 0.0
+    // ★ VERTICAL LOCK ★  Tuning constants
+    private let maxPitchRange: Double = .pi / 6
+    private let pitchSmoothingAlpha: Double = 0.15
+    private let pitchOffsetDecay: Double = 0.98
+    nonisolated(unsafe) private var pitchHoldOffset: Double = 0.0
 
     // MARK: - Published state
 
@@ -72,7 +75,7 @@ final class CameraManager: NSObject, ObservableObject {
 
     // MARK: - Motion snapshot provider
 
-    nonisolated(unsafe) var motionSnapshotProvider: () -> (roll: Double, offsetX: Double, offsetY: Double) = { (0, 0, 0) }
+    nonisolated(unsafe) var motionSnapshotProvider: () -> (roll: Double, offsetX: Double, offsetY: Double, pitch: Double) = { (0, 0, 0, 0) }
 
     // MARK: - Providers (kept for backwards-compat)
 
@@ -434,6 +437,9 @@ final class CameraManager: NSObject, ObservableObject {
         smoothedNormX += translationSmoothingAlpha * (snap.offsetX - smoothedNormX)
         smoothedNormY += translationSmoothingAlpha * (snap.offsetY - smoothedNormY)
 
+        // ★ VERTICAL LOCK ★  Smooth pitch angle
+        smoothedPitch += pitchSmoothingAlpha * (snap.pitch - smoothedPitch)
+
         let angle: CGFloat = CGFloat(-smoothedRoll)
         let cx = pW / 2;  let cy = pH / 2
 
@@ -457,9 +463,24 @@ final class CameraManager: NSObject, ObservableObject {
         let shiftX = rotNormX * marginX * 0.9
         let shiftY = rotNormY * marginY * 0.9
 
+        // ★ VERTICAL LOCK ★  Pitch → vertical crop shift
+        let pitchNormRaw = CGFloat(smoothedPitch) / CGFloat(maxPitchRange)
+        let pitchNorm    = max(-1.0, min(1.0, pitchNormRaw))
+
+        pitchHoldOffset = pitchHoldOffset * pitchOffsetDecay
+                         + pitchNorm * (1.0 - pitchOffsetDecay)
+
+        // Rotate pitch offset into roll-corrected coordinate frame
+        let rotatedPitchShiftX = -CGFloat(pitchHoldOffset) * sinA * marginX
+        let rotatedPitchShiftY =  CGFloat(pitchHoldOffset) * cosA * marginY
+
+        // Composite crop rect
+        let totalShiftX = shiftX + rotatedPitchShiftX
+        let totalShiftY = shiftY + rotatedPitchShiftY
+
         let cropRect = CGRect(
-            x: re.midX - cropW / 2 + shiftX,
-            y: re.midY - cropH / 2 + shiftY,
+            x: re.midX - cropW / 2 + totalShiftX,
+            y: re.midY - cropH / 2 + totalShiftY,
             width:  cropW,
             height: cropH
         )
