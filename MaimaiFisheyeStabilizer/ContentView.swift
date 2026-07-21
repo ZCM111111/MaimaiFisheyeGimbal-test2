@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var lensProfile = LensProfile.load()
     @State private var stabilization = StabilizationParams.load()
     @State private var showSettings = false
+    @State private var outputResolution: OutputResolution = .p1080
 
     var body: some View {
         ZStack {
@@ -79,7 +80,7 @@ struct ContentView: View {
                     Spacer()
                     VStack(spacing: 8) {
                         StatusOverlay(
-                            resolution: "1080p",
+                            resolution: outputResolution.label,
                             isRecording: recorder.isRecording,
                             duration: recorder.recordingDuration
                         )
@@ -135,7 +136,7 @@ struct ContentView: View {
             }
         } else {
             let outputURL = generateOutputURL()
-            let size = CGSize(width: 1920, height: 1080)
+            let size = outputResolution.size
             recorder.startRecording(outputURL: outputURL, size: size)
         }
     }
@@ -151,4 +152,23 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
+}
+
+enum OutputResolution: String, CaseIterable {
+    case p1080 = "1080p"
+    case p4K = "4K"
+
+    var label: String {
+        switch self {
+        case .p1080: return "1080p"
+        case .p4K: return "4K"
+        }
+    }
+
+    var size: CGSize {
+        switch self {
+        case .p1080: return CGSize(width: 1920, height: 1080)
+        case .p4K: return CGSize(width: 3840, height: 2160)
+        }
+    }
 }
