@@ -10,7 +10,7 @@ workflows:
       - name: Generate Xcode project
         script: xcodegen generate
 
-      - name: Archive (no signing)
+      - name: Archive
         script: |
           xcodebuild \
             -project MaimaiFisheyeStabilizer.xcodeproj \
@@ -20,19 +20,14 @@ workflows:
             -archivePath $CM_BUILD_DIR/build.xcarchive \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
-            -quiet \
-            archive 2>&1 | grep -i "error" || true
+            archive
 
-      - name: Export unsigned IPA
+      - name: Export IPA
         script: |
           xcodebuild \
             -exportArchive \
             -archivePath $CM_BUILD_DIR/build.xcarchive \
             -exportPath $CM_BUILD_DIR/output \
-            -exportOptionsPlist exportOptions.plist \
-            CODE_SIGNING_ALLOWED=NO \
-            -quiet \
-            2>&1 | grep -i "error" || true
+            -exportOptionsPlist exportOptions.plist
     artifacts:
       - output/*.ipa
-      - build.xcarchive/**/*.app
