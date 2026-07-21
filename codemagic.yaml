@@ -2,24 +2,13 @@ workflows:
   ios-debug:
     name: iOS Debug Build
     environment:
-      flutter: false
       xcode: 15.0
-      cocoapods: default
     scripts:
       - name: Install XcodeGen
-        script: |
-          brew install xcodegen
+        script: brew install xcodegen
 
       - name: Generate Xcode project
-        script: |
-          xcodegen generate
-
-      - name: Set up code signing
-        script: |
-          keychain initialize
-          # Add your Apple certificate and profile here
-          # keychain add-certificates
-          # Fetch provisioning profiles
+        script: xcodegen generate
 
       - name: Build debug
         script: |
@@ -30,39 +19,33 @@ workflows:
             -configuration Debug \
             -archivePath $CM_BUILD_DIR/build.xcarchive \
             archive
-
     artifacts:
       - build.xcarchive/**/*.app
 
   ios-release:
     name: iOS Release (TestFlight)
     environment:
-      flutter: false
       xcode: 15.0
-      cocoapods: default
-      vars:
-        XCODE_PROJECT: "MaimaiFisheyeStabilizer.xcodeproj"
-        XCODE_SCHEME: "MaimaiFisheyeStabilizer"
+      groups:
+        - app_store_credentials
     scripts:
       - name: Install XcodeGen
-        script: |
-          brew install xcodegen
+        script: brew install xcodegen
 
       - name: Generate Xcode project
-        script: |
-          xcodegen generate
+        script: xcodegen generate
 
       - name: Set up code signing
         script: |
           keychain initialize
           keychain add-certificates
-          # Fetch provisioning profiles from Codemagic
+          provisioning_profiles fetch
 
       - name: Build release
         script: |
           xcodebuild \
-            -project $XCODE_PROJECT \
-            -scheme $XCODE_SCHEME \
+            -project MaimaiFisheyeStabilizer.xcodeproj \
+            -scheme MaimaiFisheyeStabilizer \
             -sdk iphoneos \
             -configuration Release \
             -archivePath $CM_BUILD_DIR/build.xcarchive \
@@ -75,12 +58,9 @@ workflows:
             -archivePath $CM_BUILD_DIR/build.xcarchive \
             -exportPath $CM_BUILD_DIR/output \
             -exportOptionsPlist exportOptions.plist
-
     artifacts:
       - output/*.ipa
-
     publishing:
       app_store_connect:
         api_key: $APP_STORE_CONNECT_API_KEY
-        # Submit to TestFlight automatically
         submit_to_testflight: true
