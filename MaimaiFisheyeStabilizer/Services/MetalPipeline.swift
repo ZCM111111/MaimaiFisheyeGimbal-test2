@@ -2,11 +2,30 @@ import Metal
 import MetalKit
 import CoreVideo
 
+/// Uniforms structure matching the Metal shader's StabilizerUniforms
+struct StabilizerUniforms {
+    var roll: Float
+    var pitch: Float
+    var yaw: Float
+    var strength: Float
+    var outputFov: Float
+    var focalLength: Float
+    var principalPoint: SIMD2<Float>
+    var k1: Float
+    var k2: Float
+    var viewportSize: SIMD2<Float>
+    var sourceTextureSize: SIMD2<Float>
+}
+
 class MetalPipeline: ObservableObject {
     let device: MTLDevice?
     let commandQueue: MTLCommandQueue?
     let renderPipelineState: MTLRenderPipelineState?
     let textureCache: CVMetalTextureCache?
+
+    // Uniform buffer
+    private var uniformBuffer: MTLBuffer?
+    private var currentUniforms: StabilizerUniforms
 
     init() {
         self.device = MTLCreateSystemDefaultDevice()
@@ -20,7 +39,78 @@ class MetalPipeline: ObservableObject {
             self.textureCache = nil
         }
 
+        // Initialize default uniforms
+        self.currentUniforms = StabilizerUniforms(
+            roll: 0.0,
+            pitch: 0.0,
+            yaw: 0.0,
+            strength: 1.0,
+            outputFov: 100.0,
+            focalLength: 500.0,
+            principalPoint: SIMD2<Float>(960.0, 540.0),
+            k1: 0.0,
+            k2: 0.0,
+            viewportSize: SIMD2<Float>(1920.0, 1080.0),
+            sourceTextureSize: SIMD2<Float>(1920.0, 1080.0)
+        )
+
         self.renderPipelineState = MetalPipeline.buildRenderPipelineState(device: device)
+
+        // Create uniform buffer
+        if let device = device {
+            self.uniformBuffer = device.makeBuffer(
+                length: MemoryLayout<StabilizerUniforms>.stride,
+                options: .storageModeShared
+            )
+            // Initialize with default values
+            updateUniformBuffer()
+        }
+    }
+
+    /// Update uniforms with motion data and lens parameters
+    func updateUniforms(
+        roll: Float,
+        pitch: Float,
+        yaw: Float,
+        strength: Float,
+        outputFov: Float,
+        focalLength: Float,
+        principalPoint: SIMD2<Float>,
+        k1: Float,
+        k2: Float,
+        viewportSize: SIMD2<Float>,
+        sourceTextureSize: SIMD2<Float>
+    ) {
+        currentUniforms.roll = roll
+        currentUniforms.pitch = pitch
+        currentUniforms.yaw = yaw
+        currentUniforms.strength = strength
+        currentUniforms.outputFov = outputFov
+        currentUniforms.focalLength = focalLength
+        currentUniforms.principalPoint = principalPoint
+        currentUniforms.k1 = k1
+        currentUniforms.k2 = k2
+        currentUniforms.viewportSize = viewportSize
+        currentUniforms.sourceTextureSize = sourceTextureSize
+
+        updateUniformBuffer()
+    }
+
+    /// Get the current uniforms (for read access)
+    var uniforms: StabilizerUniforms {
+        return currentUniforms
+    }
+
+    private func updateUniformBuffer() {
+        guard let uniformBuffer = uniformBuffer else { return }
+        let bufferPointer = uniformBuffer.contents()
+        let uniformsPointer = bufferPointer.bindMemory(to: StabilizerUniforms.self, capacity: 1)
+        uniformsPointer[0] = currentUniforms
+    }
+
+    /// Get the Metal buffer for binding to the shader
+    func getUniformBuffer() -> MTLBuffer? {
+        return uniformBuffer
     }
 
     private static func buildRenderPipelineState(device: MTLDevice?) -> MTLRenderPipelineState? {

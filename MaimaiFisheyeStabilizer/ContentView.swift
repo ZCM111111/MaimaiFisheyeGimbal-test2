@@ -6,12 +6,31 @@ struct ContentView: View {
     @StateObject private var metalPipeline = MetalPipeline()
     @StateObject private var motionManager = MotionManager()
 
+    // MARK: - Default Lens Parameters for 238° fisheye
+    private let defaultStrength: Double = 1.0
+    private let defaultOutputFov: Double = 100.0
+    private let defaultFocalLength: Double = 500.0
+    private let defaultPrincipalPointX: Double = 960.0
+    private let defaultPrincipalPointY: Double = 540.0
+    private let defaultK1: Double = 0.0
+    private let defaultK2: Double = 0.0
+
     var body: some View {
         ZStack {
             if let device = metalPipeline.device {
                 CameraPreviewView(
                     device: device,
-                    pixelBuffer: cameraManager.currentPixelBuffer
+                    pixelBuffer: cameraManager.currentPixelBuffer,
+                    roll: motionManager.roll,
+                    pitch: motionManager.pitch,
+                    yaw: motionManager.yaw,
+                    strength: defaultStrength,
+                    outputFov: defaultOutputFov,
+                    focalLength: defaultFocalLength,
+                    principalPointX: defaultPrincipalPointX,
+                    principalPointY: defaultPrincipalPointY,
+                    k1: defaultK1,
+                    k2: defaultK2
                 )
                 .ignoresSafeArea()
             } else {
