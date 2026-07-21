@@ -12,4 +12,29 @@ struct StabilizationParams: Codable {
         maxOffset: 0.5,
         outputFov: 100.0
     )
+
+    // MARK: - Persistence
+
+    private static let storageKey = "StabilizationParams"
+
+    /// Save these parameters to UserDefaults as JSON.
+    func save() {
+        if let data = try? JSONEncoder().encode(self) {
+            UserDefaults.standard.set(data, forKey: StabilizationParams.storageKey)
+        }
+    }
+
+    /// Load saved parameters from UserDefaults, or return the default.
+    static func load() -> StabilizationParams {
+        guard let data = UserDefaults.standard.data(forKey: storageKey),
+              let params = try? JSONDecoder().decode(StabilizationParams.self, from: data) else {
+            return StabilizationParams.default
+        }
+        return params
+    }
+
+    /// Reset to the default parameters and clear saved data.
+    static func resetToDefault() {
+        UserDefaults.standard.removeObject(forKey: storageKey)
+    }
 }

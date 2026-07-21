@@ -20,4 +20,29 @@ struct LensProfile: Codable, Equatable {
         k3: 0.0,
         k4: 0.0
     )
+
+    // MARK: - Persistence
+
+    private static let storageKey = "LensProfile"
+
+    /// Save this profile to UserDefaults as JSON.
+    func save() {
+        if let data = try? JSONEncoder().encode(self) {
+            UserDefaults.standard.set(data, forKey: LensProfile.storageKey)
+        }
+    }
+
+    /// Load the saved profile from UserDefaults, or return the default.
+    static func load() -> LensProfile {
+        guard let data = UserDefaults.standard.data(forKey: storageKey),
+              let profile = try? JSONDecoder().decode(LensProfile.self, from: data) else {
+            return LensProfile.default
+        }
+        return profile
+    }
+
+    /// Reset to the default profile and clear saved data.
+    static func resetToDefault() {
+        UserDefaults.standard.removeObject(forKey: storageKey)
+    }
 }

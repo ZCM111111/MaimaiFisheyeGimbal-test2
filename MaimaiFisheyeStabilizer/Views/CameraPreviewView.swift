@@ -8,13 +8,8 @@ struct CameraPreviewView: UIViewRepresentable {
     let roll: Double
     let pitch: Double
     let yaw: Double
-    let strength: Double
-    let outputFov: Double
-    let focalLength: Double
-    let principalPointX: Double
-    let principalPointY: Double
-    let k1: Double
-    let k2: Double
+    let lensProfile: LensProfile
+    let stabilization: StabilizationParams
 
     func makeUIView(context: Context) -> MTKView {
         let mtkView = MTKView()
@@ -35,13 +30,8 @@ struct CameraPreviewView: UIViewRepresentable {
             roll: roll,
             pitch: pitch,
             yaw: yaw,
-            strength: strength,
-            outputFov: outputFov,
-            focalLength: focalLength,
-            principalPointX: principalPointX,
-            principalPointY: principalPointY,
-            k1: k1,
-            k2: k2
+            lensProfile: lensProfile,
+            stabilization: stabilization
         )
         uiView.setNeedsDisplay()
     }
@@ -67,13 +57,8 @@ struct CameraPreviewView: UIViewRepresentable {
             roll: Double,
             pitch: Double,
             yaw: Double,
-            strength: Double,
-            outputFov: Double,
-            focalLength: Double,
-            principalPointX: Double,
-            principalPointY: Double,
-            k1: Double,
-            k2: Double
+            lensProfile: LensProfile,
+            stabilization: StabilizationParams
         ) {
             let sourceWidth: Float
             let sourceHeight: Float
@@ -89,12 +74,12 @@ struct CameraPreviewView: UIViewRepresentable {
                 roll: Float(roll),
                 pitch: Float(pitch),
                 yaw: Float(yaw),
-                strength: Float(strength),
-                outputFov: Float(outputFov),
-                focalLength: Float(focalLength),
-                principalPoint: SIMD2<Float>(Float(principalPointX), Float(principalPointY)),
-                k1: Float(k1),
-                k2: Float(k2),
+                strength: stabilization.strength,
+                outputFov: stabilization.outputFov,
+                focalLength: lensProfile.focalLength,
+                principalPoint: SIMD2<Float>(lensProfile.principalPointX, lensProfile.principalPointY),
+                k1: lensProfile.k1,
+                k2: lensProfile.k2,
                 viewportSize: SIMD2<Float>(Float(viewSize.width), Float(viewSize.height)),
                 sourceTextureSize: SIMD2<Float>(sourceWidth, sourceHeight)
             )

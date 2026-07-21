@@ -4,6 +4,10 @@ struct SettingsView: View {
     @Binding var lensProfile: LensProfile
     @Binding var stabilization: StabilizationParams
     var onReCenter: () -> Void
+    var onSave: () -> Void
+    var onLoad: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationView {
@@ -49,6 +53,10 @@ struct SettingsView: View {
                         Slider(value: $stabilization.smoothing, in: 0.01...1.0, step: 0.01)
                     }
                     VStack(alignment: .leading) {
+                        Text("Max Offset: \(String(format: "%.2f", stabilization.maxOffset))")
+                        Slider(value: $stabilization.maxOffset, in: 0.0...2.0, step: 0.05)
+                    }
+                    VStack(alignment: .leading) {
                         Text("Output FOV: \(Int(stabilization.outputFov))°")
                         Slider(value: $stabilization.outputFov, in: 30...180, step: 1)
                     }
@@ -64,8 +72,49 @@ struct SettingsView: View {
                         }
                     }
                 }
+
+                Section {
+                    Button(action: {
+                        onSave()
+                    }) {
+                        HStack {
+                            Spacer()
+                            Text("Save Profile")
+                                .font(.headline)
+                            Spacer()
+                        }
+                    }
+
+                    Button(action: {
+                        onLoad()
+                    }) {
+                        HStack {
+                            Spacer()
+                            Text("Load Profile")
+                                .font(.headline)
+                            Spacer()
+                        }
+                    }
+                }
             }
             .navigationTitle("Settings")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
         }
     }
+}
+
+#Preview {
+    SettingsView(
+        lensProfile: .constant(LensProfile.default),
+        stabilization: .constant(StabilizationParams.default),
+        onReCenter: {},
+        onSave: {},
+        onLoad: {}
+    )
 }

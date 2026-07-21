@@ -6,14 +6,9 @@ struct ContentView: View {
     @StateObject private var metalPipeline = MetalPipeline()
     @StateObject private var motionManager = MotionManager()
 
-    // MARK: - Default Lens Parameters for 238° fisheye
-    private let defaultStrength: Double = 1.0
-    private let defaultOutputFov: Double = 100.0
-    private let defaultFocalLength: Double = 500.0
-    private let defaultPrincipalPointX: Double = 960.0
-    private let defaultPrincipalPointY: Double = 540.0
-    private let defaultK1: Double = 0.0
-    private let defaultK2: Double = 0.0
+    @State private var lensProfile = LensProfile.load()
+    @State private var stabilization = StabilizationParams.load()
+    @State private var showSettings = false
 
     var body: some View {
         ZStack {
@@ -24,13 +19,8 @@ struct ContentView: View {
                     roll: motionManager.roll,
                     pitch: motionManager.pitch,
                     yaw: motionManager.yaw,
-                    strength: defaultStrength,
-                    outputFov: defaultOutputFov,
-                    focalLength: defaultFocalLength,
-                    principalPointX: defaultPrincipalPointX,
-                    principalPointY: defaultPrincipalPointY,
-                    k1: defaultK1,
-                    k2: defaultK2
+                    lensProfile: lensProfile,
+                    stabilization: stabilization
                 )
                 .ignoresSafeArea()
             } else {
@@ -59,6 +49,43 @@ struct ContentView: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 32)
             }
+
+            // Top-right settings button
+            VStack {
+                HStack {
+                    Spacer()
+                    Button(action: {
+                        showSettings = true
+                    }) {
+                        Image(systemName: "gear")
+                            .font(.title2)
+                            .foregroundColor(.white)
+                            .padding(12)
+                            .background(Color.black.opacity(0.6))
+                            .clipShape(Circle())
+                    }
+                    .padding(.top, 8)
+                    .padding(.trailing, 16)
+                }
+                Spacer()
+            }
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView(
+                lensProfile: $lensProfile,
+                stabilization: $stabilization,
+                onReCenter: {
+                    motionManager.resetCenter()
+                },
+                onSave: {
+                    lensProfile.save()
+                    stabilization.save()
+                },
+                onLoad: {
+                    lensProfile = LensProfile.load()
+                    stabilization = StabilizationParams.load()
+                }
+            )
         }
         .onAppear {
             cameraManager.startSession()
