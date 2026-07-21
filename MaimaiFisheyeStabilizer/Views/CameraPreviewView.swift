@@ -1,5 +1,6 @@
 import SwiftUI
 import MetalKit
+import simd
 
 struct CameraPreviewView: UIViewRepresentable {
     let pixelBuffer: CVPixelBuffer?
@@ -60,17 +61,29 @@ struct CameraPreviewView: UIViewRepresentable {
             guard let commandBuffer = metalPipeline.commandQueue.makeCommandBuffer(),
                   let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else { return }
 
-            // Update uniforms with current motion data
+            // Get texture size
+            let inputWidth = Float(sourceTexture.width)
+            let inputHeight = Float(sourceTexture.height)
+
+            // Update uniforms with quaternion-based orientation
+            // The shader will compute: counter_rotation = reference * inverse(current)
+            // We pass the raw smoothed orientation as "orientation"
+            // and the reference as "reference"
+            // The shader handles the counter-rotation computation
+
+            // For the reference, we use identity (phone's initial orientation)
+            // The MotionManager already computes orientation relative to reference
+            // So we can pass identity as reference and motion.orientation as orientation
             metalPipeline.updateUniforms(
-                roll: Float(motion.roll),
-                pitch: Float(motion.pitch),
-                yaw: Float(motion.yaw),
+                orientation: motion.orientation,
+                reference: .identity, // Already relative to reference
                 strength: stabilization.strength,
                 outputFov: stabilization.outputFov,
                 focalLength: lensProfile.focalLength,
                 principalPoint: SIMD2<Float>(lensProfile.principalPointX, lensProfile.principalPointY),
-                k1: lensProfile.k1,
-                k2: lensProfile.k2
+                k: SIMD4<Float>(lensProfile.k1, lensProfile.k2, 0, 0),
+                inputSize: SIMD2<Float>(inputWidth, inputHeight),
+                outputSize: SIMD2<Float>(Float(view.drawableSize.width), Float(view.drawableSize.height))
             )
 
             encoder.setRenderPipelineState(pipelineState)
@@ -81,7 +94,7 @@ struct CameraPreviewView: UIViewRepresentable {
                 encoder.setFragmentBuffer(uniformBuffer, offset: 0, index: 0)
             }
 
-            // Create sampler descriptor
+            // Create sampler
             let samplerDescriptor = MTLSamplerDescriptor()
             samplerDescriptor.minFilter = .linear
             samplerDescriptor.magFilter = .linear

@@ -1,5 +1,29 @@
 import Metal
 import MetalKit
+import simd
+
+// Quaternion struct matching Metal shader
+struct Quat {
+    var x: Float
+    var y: Float
+    var z: Float
+    var w: Float
+
+    static let identity = Quat(x: 0, y: 0, z: 0, w: 1)
+}
+
+// Uniform struct matching Metal shader
+struct StabilizationUniforms {
+    var orientation: Quat        // Current phone orientation
+    var reference: Quat          // Reference (stable) orientation
+    var strength: Float          // Stabilization strength (0-1)
+    var outputFov: Float         // Output FOV in degrees
+    var focalLength: Float       // Focal length in pixels
+    var principalPoint: SIMD2<Float> // Lens center (cx, cy)
+    var k: SIMD4<Float>          // Fisheye distortion coefficients
+    var inputSize: SIMD2<Float>  // Input texture size
+    var outputSize: SIMD2<Float> // Output texture size
+}
 
 class MetalPipeline {
     let device: MTLDevice
@@ -25,7 +49,6 @@ class MetalPipeline {
 
     // MARK: - Full-screen quad vertices (position + texcoord)
     private func setupVertexData() {
-        // 2 triangles covering the full screen
         let vertices: [Float] = [
             // position (x, y, z, w)   texcoord (u, v)
             -1.0,  1.0, 0.0, 1.0,    0.0, 0.0,
@@ -49,7 +72,6 @@ class MetalPipeline {
         pipelineDescriptor.fragmentFunction = fragmentFunction
         pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
 
-        // Vertex descriptor: position (float4) + texcoord (float2)
         let vertexDescriptor = MTLVertexDescriptor()
         vertexDescriptor.attributes[0].format = .float4
         vertexDescriptor.attributes[0].offset = 0
@@ -67,31 +89,27 @@ class MetalPipeline {
         }
     }
 
-    // MARK: - Update uniform buffer with stabilization parameters
-    func updateUniforms(roll: Float, pitch: Float, yaw: Float,
+    // MARK: - Update uniform buffer
+    func updateUniforms(orientation: Quat, reference: Quat,
                         strength: Float, outputFov: Float,
                         focalLength: Float, principalPoint: SIMD2<Float>,
-                        k1: Float, k2: Float) {
-        struct Uniforms {
-            var roll: Float
-            var pitch: Float
-            var yaw: Float
-            var strength: Float
-            var outputFov: Float
-            var focalLength: Float
-            var principalPoint: SIMD2<Float>
-            var k1: Float
-            var k2: Float
-        }
-
-        var uniforms = Uniforms(roll: roll, pitch: pitch, yaw: yaw, strength: strength,
-                                outputFov: outputFov, focalLength: focalLength,
-                                principalPoint: principalPoint, k1: k1, k2: k2)
+                        k: SIMD4<Float>, inputSize: SIMD2<Float>, outputSize: SIMD2<Float>) {
+        var uniforms = StabilizationUniforms(
+            orientation: orientation,
+            reference: reference,
+            strength: strength,
+            outputFov: outputFov,
+            focalLength: focalLength,
+            principalPoint: principalPoint,
+            k: k,
+            inputSize: inputSize,
+            outputSize: outputSize
+        )
 
         if uniformBuffer == nil {
-            uniformBuffer = device.makeBuffer(bytes: &uniforms, length: MemoryLayout<Uniforms>.stride, options: [])
+            uniformBuffer = device.makeBuffer(bytes: &uniforms, length: MemoryLayout<StabilizationUniforms>.stride, options: [])
         } else {
-            memcpy(uniformBuffer!.contents(), &uniforms, MemoryLayout<Uniforms>.stride)
+            memcpy(uniformBuffer!.contents(), &uniforms, MemoryLayout<StabilizationUniforms>.stride)
         }
     }
 

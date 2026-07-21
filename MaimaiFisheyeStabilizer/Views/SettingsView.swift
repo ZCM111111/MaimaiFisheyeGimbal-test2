@@ -29,6 +29,14 @@ struct SettingsView: View {
                         Text("K2: \(String(format: "%.4f", lensProfile.k2))")
                         Slider(value: $lensProfile.k2, in: -1.0...1.0, step: 0.001)
                     }
+                    VStack(alignment: .leading) {
+                        Text("K3: \(String(format: "%.4f", lensProfile.k3))")
+                        Slider(value: $lensProfile.k3, in: -1.0...1.0, step: 0.001)
+                    }
+                    VStack(alignment: .leading) {
+                        Text("K4: \(String(format: "%.4f", lensProfile.k4))")
+                        Slider(value: $lensProfile.k4, in: -1.0...1.0, step: 0.001)
+                    }
                 }
 
                 Section("Stabilization") {
