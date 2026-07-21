@@ -2,7 +2,7 @@ workflows:
   ios-debug:
     name: iOS Debug Build
     environment:
-      xcode: 15.4
+      xcode: 16.0
     scripts:
       - name: Install XcodeGen
         script: brew install xcodegen
