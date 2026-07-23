@@ -12,6 +12,14 @@ final class CameraManager: NSObject, ObservableObject {
     /// Called from capture callback — downstream renders the frame.
     var frameCallback: ((CVPixelBuffer, CMTime) -> Void)?
 
+    func requestPermission(completion: @escaping (Bool) -> Void) {
+        AVCaptureDevice.requestAccess(for: .video) { granted in
+            DispatchQueue.main.async {
+                completion(granted)
+            }
+        }
+    }
+
     func configure(resolution: StabilizationSettings.Resolution) {
         session.beginConfiguration()
         session.sessionPreset = resolution.preset
@@ -36,10 +44,14 @@ final class CameraManager: NSObject, ObservableObject {
         if session.canAddOutput(videoOutput) { session.addOutput(videoOutput) }
 
         // Set frame rate to 60 fps if supported
-        try? device.lockForConfiguration()
-        device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: 60)
-        device.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: 60)
-        device.unlockForConfiguration()
+        do {
+            try device.lockForConfiguration()
+            device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: 60)
+            device.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: 60)
+            device.unlockForConfiguration()
+        } catch {
+            print("⚠️ Could not lock device for configuration: \(error)")
+        }
 
         session.commitConfiguration()
     }

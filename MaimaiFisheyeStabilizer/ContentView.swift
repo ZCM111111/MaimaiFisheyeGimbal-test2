@@ -20,29 +20,25 @@ struct ContentView: View {
             }
         }
         .onAppear {
-            status = "App launched OK"
+            status = "1/4 App launched OK"
 
-            // Step 1: Test Motion
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                let motion = MotionManager()
-                motion.start()
-                status = "Motion OK"
+            // Step 1: Motion
+            let motion = MotionManager()
+            motion.start()
+            status = "2/4 Motion OK"
 
-                // Step 2: Test Camera
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    let camera = CameraManager()
+            // Step 2: Request camera permission
+            let camera = CameraManager()
+            camera.requestPermission { granted in
+                if granted {
+                    status = "3/4 Camera permission OK"
+
+                    // Step 3: Configure and start camera
                     camera.configure(resolution: settings.resolution)
                     camera.start()
-                    status = "Camera OK"
-
-                    // Step 3: Test Metal
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        if let _ = MetalPipeline() {
-                            status = "All OK - Ready to go!"
-                        } else {
-                            status = "⚠️ Metal init failed"
-                        }
-                    }
+                    status = "4/4 Camera started - All OK!"
+                } else {
+                    status = "❌ Camera permission denied"
                 }
             }
         }
