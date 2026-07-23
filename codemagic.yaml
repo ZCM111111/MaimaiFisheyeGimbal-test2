@@ -18,6 +18,7 @@ workflows:
         script: xcodegen generate
       - name: Build for device (no code signing)
         script: |
+          set -o pipefail
           xcodebuild archive \
             -project "MaimaiFisheyeStabilizer.xcodeproj" \
             -scheme "MaimaiFisheyeStabilizer" \
@@ -30,8 +31,15 @@ workflows:
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
             ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOLS=NO \
-            2>&1 | tee build_log.txt | grep -E "error:|warning:|failed:|FAILED|BUILD"
-          echo "--- Archive exit code: ${PIPESTATUS[0]} ---"
+            2>&1 | tee build_log.txt | grep -i "error:" || true
+          EXIT_CODE=${PIPESTATUS[0]}
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "=== BUILD FAILED (exit $EXIT_CODE) ==="
+            echo "=== Errors ==="
+            grep -i "error:" build_log.txt || true
+            exit $EXIT_CODE
+          fi
+          echo "=== BUILD SUCCEEDED ==="
       - name: Package unsigned IPA
         script: |
           echo "=== Looking for built .app ==="
