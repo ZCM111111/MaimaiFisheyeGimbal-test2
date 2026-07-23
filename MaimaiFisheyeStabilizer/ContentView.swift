@@ -3,7 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var settings: StabilizationSettings
     @State private var status = "Step 0: View created"
-    @StateObject private var motion = MotionManager()
+    @State private var motion = MotionManager()
     @StateObject private var camera = CameraManager()
 
     var body: some View {

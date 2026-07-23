@@ -1,13 +1,13 @@
 import Foundation
 import CoreMotion
 
-final class MotionManager: ObservableObject {
+final class MotionManager {
     private let mm = CMMotionManager()
 
-    // Published for display; shader reads via snapshot()
-    @Published var roll: Double = 0.0
-    @Published var pitch: Double = 0.0
-    @Published var yaw: Double = 0.0
+    // Raw values — NOT @Published, read by render loop via snapshot()
+    private(set) var roll: Double = 0.0
+    private(set) var pitch: Double = 0.0
+    private(set) var yaw: Double = 0.0
 
     // Reference orientation set on recenter
     private var refRoll: Double = 0.0
@@ -28,6 +28,8 @@ final class MotionManager: ObservableObject {
     private var smoothedYaw: Double = 0.0
 
     private let updateInterval: TimeInterval = 1.0 / 120.0
+
+    var isAvailable: Bool { mm.isDeviceMotionAvailable }
 
     init() {
         guard mm.isDeviceMotionAvailable else {
