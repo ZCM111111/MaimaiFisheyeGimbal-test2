@@ -38,6 +38,10 @@ final class MotionManager: ObservableObject {
     }
 
     func start() {
+        guard mm.isDeviceMotionAvailable else {
+            print("⚠️ Device motion not available, skipping start")
+            return
+        }
         mm.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: .main) { [weak self] data, error in
             guard let self, let data = data else { return }
             let attitude = data.attitude
