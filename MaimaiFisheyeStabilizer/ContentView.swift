@@ -3,7 +3,6 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var settings: StabilizationSettings
     @State private var status = "Step 0: View created"
-    @State private var motion = MotionManager()
     @StateObject private var camera = CameraManager()
 
     var body: some View {
@@ -14,27 +13,22 @@ struct ContentView: View {
                 .font(.title2)
         }
         .onAppear {
-            status = "Step 1: onAppear"
+            status = "Step 1: onAppear OK"
 
-            // Step 2: Start motion
-            motion.start()
-            status = "Step 2: motion.start() OK"
-
-            // Step 3: Request camera permission
+            // Skip motion, go straight to camera
             camera.requestPermission { granted in
                 if granted {
-                    status = "Step 3: permission granted"
+                    status = "Step 2: permission granted"
                     camera.configure(resolution: settings.resolution)
-                    status = "Step 4: camera configured"
+                    status = "Step 3: camera configured"
                     camera.start()
-                    status = "Step 5: camera started - ALL DONE"
+                    status = "Step 4: camera started - ALL DONE"
                 } else {
-                    status = "Step 3: permission DENIED"
+                    status = "Step 2: permission DENIED"
                 }
             }
         }
         .onDisappear {
-            motion.stop()
             camera.stop()
         }
     }
