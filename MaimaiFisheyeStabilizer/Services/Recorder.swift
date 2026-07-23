@@ -17,7 +17,11 @@ final class Recorder {
 
     func start() {
         try? FileManager.default.removeItem(at: outputURL)
-        writer = try! AVAssetWriter(outputURL: outputURL, fileType: .mov)
+        guard let w = try? AVAssetWriter(outputURL: outputURL, fileType: .mov) else {
+            print("❌ AVAssetWriter init failed")
+            return
+        }
+        writer = w
 
         let settings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.hevc,

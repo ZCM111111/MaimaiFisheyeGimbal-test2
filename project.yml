@@ -21,7 +21,13 @@ targets:
       base:
         INFOPLIST_FILE: MaimaiFisheyeStabilizer/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.maimai.stabilizer
-    dependencies: []
+    dependencies:
+      - sdk: Metal.framework
+      - sdk: MetalKit.framework
+      - sdk: AVFoundation.framework
+      - sdk: CoreMotion.framework
+      - sdk: CoreMedia.framework
+      - sdk: CoreImage.framework
 
   MaimaiFisheyeStabilizerTests:
     type: bundle.unit-test
