@@ -2,43 +2,27 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var settings: StabilizationSettings
-    @State private var status = "Starting..."
+    @State private var status = "Step 0: View created"
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-
-            VStack(spacing: 20) {
-                Text("Maimai Fisheye Gimbal")
-                    .font(.title)
-                    .foregroundColor(.white)
-
-                Text(status)
-                    .font(.body)
-                    .foregroundColor(.green)
-                    .padding()
-            }
+            Text(status)
+                .foregroundColor(.white)
+                .font(.title2)
         }
         .onAppear {
-            status = "1/4 App launched OK"
+            status = "Step 1: onAppear fired"
 
-            // Step 1: Motion
-            let motion = MotionManager()
-            motion.start()
-            status = "2/4 Motion OK"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                status = "Step 2: MotionManager init..."
+                let _ = MotionManager()
+                status = "Step 3: MotionManager created OK"
 
-            // Step 2: Request camera permission
-            let camera = CameraManager()
-            camera.requestPermission { granted in
-                if granted {
-                    status = "3/4 Camera permission OK"
-
-                    // Step 3: Configure and start camera
-                    camera.configure(resolution: settings.resolution)
-                    camera.start()
-                    status = "4/4 Camera started - All OK!"
-                } else {
-                    status = "❌ Camera permission denied"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    status = "Step 4: CameraManager init..."
+                    let _ = CameraManager()
+                    status = "Step 5: CameraManager created OK"
                 }
             }
         }
