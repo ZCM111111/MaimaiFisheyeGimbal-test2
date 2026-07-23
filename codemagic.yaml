@@ -12,14 +12,18 @@ workflows:
         - pattern: main
       cancel_previous_builds: true
     scripts:
+      - name: Install XcodeGen
+        script: brew install xcodegen
+      - name: Generate Xcode project
+        script: xcodegen generate
       - name: Build for device (no code signing)
         script: |
           xcodebuild archive \
-            -project "Stable Action.xcodeproj" \
-            -scheme "Stable Action" \
+            -project "MaimaiFisheyeStabilizer.xcodeproj" \
+            -scheme "MaimaiFisheyeStabilizer" \
             -destination 'generic/platform=iOS' \
             -configuration Debug \
-            -archivePath "$CM_BUILD_DIR/build/StableAction.xcarchive" \
+            -archivePath "$CM_BUILD_DIR/build/MaimaiFisheyeStabilizer.xcarchive" \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
@@ -31,9 +35,7 @@ workflows:
       - name: Package unsigned IPA
         script: |
           echo "=== Looking for built .app ==="
-          find $CM_BUILD_DIR/build -name "Stable Action.app" 2>/dev/null
-
-          APP_PATH=$(find $CM_BUILD_DIR/build -name "Stable Action.app" 2>/dev/null | head -1)
+          APP_PATH=$(find $CM_BUILD_DIR/build -name "MaimaiFisheyeStabilizer.app" 2>/dev/null | head -1)
           if [ -z "$APP_PATH" ]; then
             echo "Error: Could not find built .app"
             echo "=== Build log (last 100 lines) ==="
@@ -44,7 +46,7 @@ workflows:
           mkdir -p $CM_BUILD_DIR/build/Payload
           cp -R "$APP_PATH" $CM_BUILD_DIR/build/Payload/
           cd $CM_BUILD_DIR/build
-          zip -r StableAction-unsigned.ipa Payload/
-          ls -lh StableAction-unsigned.ipa
+          zip -r MaimaiFisheyeStabilizer-unsigned.ipa Payload/
+          ls -lh MaimaiFisheyeStabilizer-unsigned.ipa
     artifacts:
-      - build/StableAction-unsigned.ipa
+      - build/MaimaiFisheyeStabilizer-unsigned.ipa
