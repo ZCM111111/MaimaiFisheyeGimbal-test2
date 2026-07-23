@@ -1,5 +1,6 @@
 import SwiftUI
 import MetalKit
+import CoreMedia
 
 struct MetalPreviewView: UIViewRepresentable {
     var pipeline: MetalPipeline
