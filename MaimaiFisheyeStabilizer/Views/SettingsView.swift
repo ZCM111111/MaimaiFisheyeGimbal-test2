@@ -20,11 +20,11 @@ struct SettingsView: View {
                 // ── Stabilization ────────────────────────
                 Section("Stabilization") {
                     VStack(alignment: .leading) {
-                        Text("Strength: \(settings.strength, specifier: "%.0f")%")
+                        Text("Strength: \(Int(settings.strength * 100))%")
                         Slider(value: $settings.strength, in: 0...1, step: 0.05)
                     }
                     VStack(alignment: .leading) {
-                        Text("Smoothing: \(settings.smoothing, specifier: "%.0f")%")
+                        Text("Smoothing: \(Int(settings.smoothing * 100))%")
                         Slider(value: $settings.smoothing, in: 0...1, step: 0.05)
                     }
                 }
@@ -66,27 +66,27 @@ struct SettingsView: View {
                 Section("Lens (238° Fish-Eye)") {
                     VStack(alignment: .leading) {
                         Text("Focal length: \(Int(settings.lensProfile.focalLength))")
-                        Slider(value: $settings.lensProfile.focalLength, in: 200...2000, step: 10)
+                        Slider(value: lensBinding(\.focalLength), in: 200...2000, step: 10)
                     }
                     VStack(alignment: .leading) {
                         Text("Center X: \(settings.lensProfile.centerX, specifier: "%.3f")")
-                        Slider(value: $settings.lensProfile.centerX, in: 0.3...0.7, step: 0.001)
+                        Slider(value: lensBinding(\.centerX), in: 0.3...0.7, step: 0.001)
                     }
                     VStack(alignment: .leading) {
                         Text("Center Y: \(settings.lensProfile.centerY, specifier: "%.3f")")
-                        Slider(value: $settings.lensProfile.centerY, in: 0.3...0.7, step: 0.001)
+                        Slider(value: lensBinding(\.centerY), in: 0.3...0.7, step: 0.001)
                     }
                     VStack(alignment: .leading) {
                         Text("K1: \(settings.lensProfile.k1, specifier: "%.4f")")
-                        Slider(value: $settings.lensProfile.k1, in: -0.5...0.5, step: 0.0005)
+                        Slider(value: lensBinding(\.k1), in: -0.5...0.5, step: 0.0005)
                     }
                     VStack(alignment: .leading) {
                         Text("K2: \(settings.lensProfile.k2, specifier: "%.4f")")
-                        Slider(value: $settings.lensProfile.k2, in: -0.5...0.5, step: 0.0005)
+                        Slider(value: lensBinding(\.k2), in: -0.5...0.5, step: 0.0005)
                     }
                     VStack(alignment: .leading) {
                         Text("Output scale: \(settings.lensProfile.outputScale, specifier: "%.2f")")
-                        Slider(value: $settings.lensProfile.outputScale, in: 0.25...4.0, step: 0.05)
+                        Slider(value: lensBinding(\.outputScale), in: 0.25...4.0, step: 0.05)
                     }
                 }
 
@@ -105,5 +105,13 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    /// Create a Binding to a nested LensProfile property.
+    private func lensBinding(_ keyPath: WritableKeyPath<LensProfile, Double>) -> Binding<Double> {
+        Binding(
+            get: { settings.lensProfile[keyPath: keyPath] },
+            set: { settings.lensProfile[keyPath: keyPath] = $0 }
+        )
     }
 }
