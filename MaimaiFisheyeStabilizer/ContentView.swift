@@ -8,8 +8,8 @@ struct ContentView: View {
     @State private var pipeline: MetalPipeline?
     @State private var showSettings = false
     @State private var recorder: Recorder?
+    @State private var setupLog: [String] = []
     @State private var isReady = false
-    @State private var errorMessage: String?
 
     var body: some View {
         ZStack {
@@ -26,23 +26,25 @@ struct ContentView: View {
                 .ignoresSafeArea()
             }
 
-            // Error overlay
-            if let errorMessage {
-                VStack {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.largeTitle)
-                        .foregroundColor(.yellow)
-                    Text(errorMessage)
-                        .foregroundColor(.white)
-                        .multilineTextAlignment(.center)
-                        .padding()
+            // Debug log overlay (always visible)
+            VStack {
+                Spacer()
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(setupLog.indices, id: \.self) { i in
+                        Text(setupLog[i])
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(setupLog[i].contains("❌") ? .red :
+                                             setupLog[i].contains("✅") ? .green : .white)
+                    }
                 }
+                .padding(8)
+                .background(Color.black.opacity(0.7))
+                .cornerRadius(6)
+                .padding(.bottom, 100)
             }
 
             VStack {
-                StatusOverlayView()
                 Spacer()
-
                 HStack(spacing: 40) {
                     Button { showSettings = true } label: {
                         Image(systemName: "gearshape.fill")
@@ -71,7 +73,7 @@ struct ContentView: View {
             }
         }
         .onAppear {
-            setupPipeline()
+            setup()
         }
         .onDisappear {
             camera.stop()
@@ -88,25 +90,41 @@ struct ContentView: View {
         }
     }
 
-    private func setupPipeline() {
-        // Initialize Metal
+    private func setup() {
+        log("1/5 Creating Metal pipeline...")
         guard let pipe = MetalPipeline() else {
-            errorMessage = "Metal not supported on this device"
+            log("❌ Metal pipeline failed")
             return
         }
         pipeline = pipe
+        log("✅ Metal pipeline OK")
 
-        // Configure camera
+        log("2/5 Configuring camera (\(settings.resolution.rawValue))...")
         camera.configure(resolution: settings.resolution)
+        log("✅ Camera configured")
 
-        // Start services
+        log("3/5 Starting camera...")
         camera.start()
-        motion.start()
+        log("✅ Camera started")
 
-        // Mark ready after a brief delay to let camera warm up
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        log("4/5 Starting motion...")
+        motion.start()
+        log("✅ Motion started")
+
+        log("5/5 Enabling preview...")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             isReady = true
+            log("✅ Preview active")
         }
+    }
+
+    private func log(_ msg: String) {
+        setupLog.append(msg)
+        // Keep only last 8 lines
+        if setupLog.count > 8 {
+            setupLog.removeFirst()
+        }
+        print("[MaimaiStab] \(msg)")
     }
 
     private func toggleRecording() {
