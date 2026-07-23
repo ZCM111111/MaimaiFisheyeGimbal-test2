@@ -81,7 +81,7 @@ struct MetalPreviewView: UIViewRepresentable {
 
             // Append to recorder if recording
             if settings.recordingState.isRecording {
-                recorder?.append(pixelBuffer: buffer, timestamp: CACurrentMediaTime())
+                recorder?.append(pixelBuffer: buffer, timestamp: CMTime(seconds: CACurrentMediaTime(), preferredTimescale: 600))
             }
         }
     }
