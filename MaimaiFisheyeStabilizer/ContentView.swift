@@ -8,10 +8,14 @@ struct ContentView: View {
     @State private var pipeline: MetalPipeline?
     @State private var showSettings = false
     @State private var recorder: Recorder?
+    @State private var isReady = false
+    @State private var errorMessage: String?
 
     var body: some View {
         ZStack {
-            if let pipeline {
+            Color.black.ignoresSafeArea()
+
+            if let pipeline, isReady {
                 MetalPreviewView(
                     pipeline: pipeline,
                     camera: camera,
@@ -22,12 +26,24 @@ struct ContentView: View {
                 .ignoresSafeArea()
             }
 
+            // Error overlay
+            if let errorMessage {
+                VStack {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.largeTitle)
+                        .foregroundColor(.yellow)
+                    Text(errorMessage)
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                        .padding()
+                }
+            }
+
             VStack {
                 StatusOverlayView()
                 Spacer()
 
                 HStack(spacing: 40) {
-                    // Settings
                     Button { showSettings = true } label: {
                         Image(systemName: "gearshape.fill")
                             .font(.title2)
@@ -36,7 +52,6 @@ struct ContentView: View {
                             .background(Circle().fill(.ultraThinMaterial))
                     }
 
-                    // Record
                     Button { toggleRecording() } label: {
                         Circle()
                             .fill(settings.recordingState.isRecording ? .red : .white)
@@ -44,7 +59,6 @@ struct ContentView: View {
                             .overlay(Circle().stroke(.white.opacity(0.3), lineWidth: 4))
                     }
 
-                    // Re-center
                     Button { motion.recenter() } label: {
                         Image(systemName: "scope")
                             .font(.title2)
@@ -57,10 +71,7 @@ struct ContentView: View {
             }
         }
         .onAppear {
-            pipeline = MetalPipeline()
-            camera.configure(resolution: settings.resolution)
-            camera.start()
-            motion.start()
+            setupPipeline()
         }
         .onDisappear {
             camera.stop()
@@ -74,6 +85,27 @@ struct ContentView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environmentObject(settings)
+        }
+    }
+
+    private func setupPipeline() {
+        // Initialize Metal
+        guard let pipe = MetalPipeline() else {
+            errorMessage = "Metal not supported on this device"
+            return
+        }
+        pipeline = pipe
+
+        // Configure camera
+        camera.configure(resolution: settings.resolution)
+
+        // Start services
+        camera.start()
+        motion.start()
+
+        // Mark ready after a brief delay to let camera warm up
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            isReady = true
         }
     }
 
