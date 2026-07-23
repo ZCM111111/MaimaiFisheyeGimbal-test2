@@ -1,0 +1,11 @@
+*.xcworkspace
+*.xcuserdata
+*.xcuserstate
+DerivedData/
+build/
+*.mode1v3
+*.mode2v3
+*.pbxuser
+*.moved-aside
+Pods/
+Carthage/Build/
